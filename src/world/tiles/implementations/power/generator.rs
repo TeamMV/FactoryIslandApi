@@ -1,37 +1,35 @@
-pub mod power;
-
-use crate::world::tiles::update::{UpdateHandler, UpdateTile};
 use bytebuffer::ByteBuffer;
 use mvutils::bytebuffer::ByteBufferExtras;
-use mvutils::save::Savable;
 use mvutils::Savable;
+use mvutils::save::Savable;
+use crate::world::tiles::update::{UpdateHandler, UpdateTile};
 
 #[derive(Clone, Savable)]
-pub struct TestUpdateTile {
+pub struct Generator {
     #[unsaved]
     handler: UpdateHandler,
-    idk: u32
+
 }
 
-impl TestUpdateTile {
+impl Generator {
     pub fn new() -> Self {
-        Self { handler: UpdateHandler::new(), idk: 0 }
+        Self {
+            handler: UpdateHandler::new(),
+        }
     }
 }
 
-impl UpdateTile for TestUpdateTile {
+impl UpdateTile for Generator {
     fn handler(&mut self) -> &mut UpdateHandler {
         &mut self.handler
     }
 
     fn on_update_receive(&mut self) -> bool {
-        //idk
         false
     }
 
     fn box_clone(&self) -> Box<dyn UpdateTile> {
-        let cloned = self.clone();
-        Box::new(cloned)
+        Box::new(self.clone())
     }
 
     fn save_to_vec(&self) -> Vec<u8> {

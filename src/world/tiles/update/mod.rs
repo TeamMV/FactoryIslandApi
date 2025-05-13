@@ -3,25 +3,28 @@ use crate::world::tiles::pos::TilePos;
 use crate::world::World;
 use mvengine::event::EventBus;
 use mvutils::save::Savable;
+use crate::FactoryIsland;
 
 pub trait UpdateTile: Send + Sync {
-    fn send_update(&mut self, at: TilePos, world: &mut World, event_bus: &mut EventBus<Event>) {
+    fn send_update(&mut self, at: TilePos, world: &mut World, event_bus: &mut EventBus<Event>, fi: &FactoryIsland) {
         if self.handler().on_update(at.clone(), world, event_bus) {
             let has_changed = self.on_update_receive();
-            if has_changed { 
+            if has_changed {
+                world.sync_tilestate(at.clone(), event_bus, fi);
                 for pos in at.direct_neighbours() {
-                    world.send_update(pos, event_bus);
+                    world.send_update(pos, event_bus, fi);
                 }
             }
         }
     }
+    
     fn end_tick(&mut self) {
         self.handler().end_tick(); 
     }
 
     fn handler(&mut self) -> &mut UpdateHandler;
     
-    ///Should return true when the tile has changed and thus should update its neighbours
+    ///Should return true when the tile has changed and thus should update its neighbours and broadcast its state to the clients
     fn on_update_receive(&mut self) -> bool;
     
     fn box_clone(&self) -> Box<dyn UpdateTile>;

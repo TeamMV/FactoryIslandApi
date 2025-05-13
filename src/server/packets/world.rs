@@ -1,11 +1,13 @@
 use crate::world::{ChunkPos, ChunkType, TileSetReason};
 use mvutils::Savable;
-use crate::world::chunk::ToClientChunk;
+use crate::world::chunk::{ToClientChunk, ToClientObject};
+use crate::world::tiles::pos::TilePos;
 use crate::world::tiles::tiles::TileType;
 
 #[derive(Savable, Clone)]
 pub struct TileSetPacket {
-    pub tile: TileType,
+    pub pos: TilePos,
+    pub tile: ToClientObject,
     pub reason: TileSetReason
 }
 

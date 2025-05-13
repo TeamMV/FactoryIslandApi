@@ -1,17 +1,17 @@
+use crate::event::world::{BeforeChunkGenerateEvent, BeforeChunkGenerateTerrainEvent};
+use crate::event::Event;
 use crate::registry::terrain::TERRAIN_REGISTRY;
+use crate::registry::GameObjects;
+use crate::world::generate::ChunkGenerator;
 use crate::world::tiles::pos::TilePos;
 use crate::world::tiles::tiles::TileType;
 use crate::world::tiles::{ObjectSource, Orientation};
 use crate::world::{ChunkPos, CHUNK_SIZE};
+use mvengine::event::EventBus;
 use mvutils::save::custom::ignore_save;
 use mvutils::save::{Loader, Savable};
 use mvutils::{enum_val, Savable};
 use std::collections::HashMap;
-use mvengine::event::EventBus;
-use crate::event::Event;
-use crate::event::world::{BeforeChunkGenerateEvent, BeforeChunkGenerateTerrainEvent};
-use crate::registry::GameObjects;
-use crate::world::generate::{ChunkGenerator, GeneratePipeline};
 
 pub const CHUNK_TILES: usize = CHUNK_SIZE as usize * CHUNK_SIZE as usize;
 
@@ -37,6 +37,10 @@ impl Chunk {
         pos.in_chunk_x + pos.in_chunk_z * CHUNK_SIZE as usize
     }
 
+    pub fn get_index_economy_edition(x: i32, z: i32) -> usize {
+        (x + z * CHUNK_SIZE) as usize
+    }
+
     pub fn position_from_index(chunk_pos: &ChunkPos, index: usize) -> TilePos {
         let x = index as i32 % CHUNK_SIZE;
         let y = index as i32 / CHUNK_SIZE;
@@ -56,6 +60,42 @@ impl Chunk {
         self.tiles[idx as usize] = Some(tile);
     }
 
+    pub fn iter_tiles(&self) -> impl Iterator<Item=(TileType, TilePos)> + use<'_> {
+        pub struct Iter<'a> {
+            index: usize,
+            tiles: &'a[Option<TileType>],
+            pos: ChunkPos
+        }
+
+        impl<'a> Iterator for Iter<'a> {
+            type Item = (TileType, TilePos);
+
+            fn next(&mut self) -> Option<Self::Item> {
+                if self.index >= CHUNK_TILES {
+                    None
+                } else {
+                    loop {
+                        if self.index >= CHUNK_TILES {
+                            return None;
+                        }
+                        if let Some(tile) = self.tiles[self.index].clone() {
+                            let pos = Chunk::position_from_index(&self.pos, self.index);
+                            self.index += 1;
+                            return Some((tile, pos));
+                        }
+                        self.index += 1;
+                    }
+                }
+            }
+        }
+
+        Iter {
+            index: 0,
+            tiles: self.tiles.as_slice(),
+            pos: self.position
+        }
+    }
+
     pub(crate) fn to_client(&self) -> ToClientChunk {
         let terrain = (0..CHUNK_TILES)
             .map(|i| {
@@ -66,12 +106,14 @@ impl Chunk {
                         id,
                         orientation: o,
                         source: tile.info.source.clone(),
+                        state: 0
                     }
                 } else {
                     ToClientObject {
                         id: 0,
                         orientation: o,
                         source: ObjectSource::Vanilla,
+                        state: 0
                     }
                 }
             })
@@ -85,6 +127,7 @@ impl Chunk {
                         id: rw.id as u16,
                         orientation: rw.info.orientation,
                         source: rw.info.source.clone(),
+                        state: rw.info.state.as_ref().map(|s| s.client_state()).unwrap_or_default()
                     }
                 })
             })
@@ -210,5 +253,6 @@ pub struct ToClientChunk {
 pub struct ToClientObject {
     pub id: u16,
     pub source: ObjectSource,
-    pub orientation: Orientation
+    pub orientation: Orientation,
+    pub state: usize
 }

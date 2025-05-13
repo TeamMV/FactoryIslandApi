@@ -4,6 +4,7 @@ use std::fmt::{Debug, Formatter, Write};
 use mvengine::graphics::comp::Drawable;
 use mvutils::Savable;
 pub use crate::world::tiles::ObjectSource;
+use crate::world::tiles::resources::ClientTileRes;
 
 #[derive(Clone, Savable)]
 pub struct TerrainTile {
@@ -37,8 +38,8 @@ impl TerrainTileInfo {
         Self { source: ObjectSource::Vanilla }
     }
     
-    pub fn from_mod(modid: &str, drawable: Drawable) -> Self {
-        Self { source: ObjectSource::Mod(modid.to_string(), drawable) }
+    pub fn from_mod(modid: &str, res: ClientTileRes) -> Self {
+        Self { source: ObjectSource::Mod(modid.to_string(), res) }
     }
 }
 

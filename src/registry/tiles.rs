@@ -1,6 +1,8 @@
 use crate::registry::Registry;
 use crate::world::tiles::tiles::{Tile, TileInfo};
 use mvutils::lazy;
+use crate::world::tiles::implementations::power::generator::Generator;
+use crate::world::tiles::implementations::power::lamp::{Lamp, LampState};
 use crate::world::tiles::implementations::TestUpdateTile;
 
 lazy! {
@@ -27,5 +29,7 @@ macro_rules! define_tiles {
 define_tiles!(Tiles, register_all, [
     air = TileInfo::vanilla_static(),
     wood = TileInfo::vanilla_static(),
-    test = TileInfo::vanilla_update(TestUpdateTile::new())
+    test = TileInfo::vanilla_update(TestUpdateTile::new()),
+    generator = TileInfo::vanilla_update_ticking(Generator::new()),
+    lamp = TileInfo::vanilla_update_state(Lamp::new(), LampState::new())
 ]);

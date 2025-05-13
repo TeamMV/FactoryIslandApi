@@ -6,7 +6,7 @@ use crate::mods::{ModLoader, DEFAULT_MOD_DIR};
 use crate::player::{Player, PlayerType};
 use crate::registry::terrain::TerrainTiles;
 use crate::registry::GameObjects;
-use crate::server::packets::common::{ClientDataPacket, PlayerData, ServerStatePacket};
+use crate::server::packets::common::{ClientDataPacket, PlayerData, ServerStatePacket, TileKind};
 use crate::server::packets::player::{OtherPlayerJoinPacket, OtherPlayerLeavePacket, OtherPlayerMovePacket, PlayerMovePacket};
 use crate::server::{ClientBoundPacket, ServerBoundPacket};
 use crate::world::{World, WorldType};
@@ -26,6 +26,12 @@ use std::process::exit;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{env, thread};
+use std::sync::atomic::{AtomicBool, Ordering};
+use mvengine::ui::timing::{AnimationState, PeriodicTask, TIMING_MANAGER};
+use mvutils::clock::Clock;
+use mvutils::unsafe_utils::Unsafe;
+use crate::registry::tiles::TILE_REGISTRY;
+use crate::world::tiles::implementations::power::lamp::LampState;
 
 pub mod event;
 pub mod world;
@@ -43,11 +49,12 @@ pub struct FactoryIsland {
     pub(crate) mod_loader: ModLoader,
     pub(crate) render_distance: i32,
     
-    pub objects: GameObjects
+    pub objects: GameObjects,
 }
 
 impl FactoryIsland {
     pub fn tick(&mut self) {
+        let this = unsafe { Unsafe::cast_static(self) };
         let mut loaded_by_player = HashSet::new();
         for player in self.players.values() {
             let mut lock = player.lock();
@@ -58,6 +65,8 @@ impl FactoryIsland {
         }
         let mut world = self.world.lock();
         world.check_unload(loaded_by_player);
+        world.tick(&mut self.event_bus, this);
+        
         drop(world);
 
         self.event_bus.dispatch(&mut Event::ServerTickEvent(ServerTickEvent));
@@ -94,14 +103,16 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
         
         event_bus.dispatch(&mut Event::GameStartEvent(GameStartEvent));
 
+        let world = World::get_main(objects.clone(), &mut event_bus);
+
         FactoryIsland {
-            world: World::get_main(objects.clone()),
+            world,
             players: HashMap::with_hasher(U64IdentityHasher::default()),
             event_bus,
             mod_loader,
             render_distance: 1,
             
-            objects
+            objects,
         }
     }
 
@@ -115,10 +126,19 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
             };
             player_data.push(data);
         }
-        let terrain_reg = save_to_vec(&registry::terrain::TERRAIN_REGISTRY);
+        let mut tiles = Vec::with_capacity(TILE_REGISTRY.len());
+        for id in 0..TILE_REGISTRY.len() {
+            if let Some(object) = TILE_REGISTRY.create_object(id) {
+                tiles.push(TileKind {
+                    id,
+                    source: object.info.source,
+                });
+            }
+        }
         client.send(ClientBoundPacket::ServerState(ServerStatePacket {
             players: player_data,
             mods: self.mod_loader.res_mod_ids(),
+            tiles,
         }));
 
         let id = client.id();

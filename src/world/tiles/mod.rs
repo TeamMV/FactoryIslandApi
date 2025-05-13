@@ -2,12 +2,14 @@ use mvengine::rendering::RenderContext;
 use mvengine::ui::context::UiResources;
 use mvutils::Savable;
 use mvengine::graphics::comp::Drawable;
+use crate::world::tiles::resources::ClientTileRes;
 
 pub mod pos;
 pub mod terrain;
 pub mod tiles;
 pub mod update;
 pub mod implementations;
+pub mod resources;
 
 #[derive(Savable, Clone, Copy, Debug)]
 pub enum Orientation {
@@ -31,5 +33,5 @@ impl Orientation {
 #[derive(Clone, Savable)]
 pub enum ObjectSource {
     Vanilla,
-    Mod(String, Drawable)
+    Mod(String, ClientTileRes)
 }

@@ -13,7 +13,7 @@ pub type TileType = SaveArc<RwLock<Tile>>;
 #[derive(Clone)]
 pub struct Tile {
     pub id: usize,
-    pub info: TileInfo
+    pub info: TileInfo,
 }
 
 impl Tile {
@@ -33,6 +33,13 @@ impl Savable for Tile {
                 let vec = b.save_to_vec();
                 vec.save(saver);
             }
+        }
+        if let Some(state) = &self.info.state {
+            1u8.save(saver);
+            let vec = state.save_to_vec();
+            vec.save(saver);
+        } else {
+            0u8.save(saver);
         }
     }
 
@@ -54,6 +61,13 @@ impl Savable for Tile {
                 _ => Err("Illegal variant".to_string())
             }?;
             template.info.inner = inner;
+            let has_state = u8::load(loader)?;
+            if has_state == 1 { 
+                let vec = Vec::<u8>::load(loader)?;
+                if let Some(state) = &mut template.info.state {
+                    state.load_into_self(vec);
+                }
+            }
             Ok(template)
         } else {
             Err(format!("Not registered: {id}"))
@@ -88,11 +102,24 @@ impl Registerable for Tile {
     }
 }
 
-#[derive(Clone)]
 pub struct TileInfo {
     pub orientation: Orientation,
     pub inner: InnerTile,
-    pub source: ObjectSource
+    pub source: ObjectSource,
+    pub should_tick: bool,
+    pub state: Option<Box<dyn TileState>>
+}
+
+impl Clone for TileInfo {
+    fn clone(&self) -> Self {
+        Self {
+            orientation: self.orientation.clone(),
+            inner: self.inner.clone(),
+            source: self.source.clone(),
+            should_tick: self.should_tick,
+            state: self.state.as_ref().map(|b| b.box_clone()),
+        }
+    }
 }
 
 impl TileInfo {
@@ -101,6 +128,8 @@ impl TileInfo {
             orientation: Orientation::North,
             inner: InnerTile::Static,
             source: ObjectSource::Vanilla,
+            should_tick: false,
+            state: None,
         }
     }
     
@@ -109,6 +138,58 @@ impl TileInfo {
             orientation: Orientation::North,
             inner: InnerTile::Update(Box::new(tile)),
             source: ObjectSource::Vanilla,
+            should_tick: false,
+            state: None,
         }
     }
+
+    pub fn vanilla_update_ticking(tile: impl UpdateTile + 'static) -> Self {
+        Self {
+            orientation: Orientation::North,
+            inner: InnerTile::Update(Box::new(tile)),
+            source: ObjectSource::Vanilla,
+            should_tick: true,
+            state: None,
+        }
+    }
+
+    pub fn vanilla_static_state(state: impl TileState + 'static) -> Self {
+        Self {
+            orientation: Orientation::North,
+            inner: InnerTile::Static,
+            source: ObjectSource::Vanilla,
+            should_tick: false,
+            state: Some(Box::new(state)),
+        }
+    }
+
+    pub fn vanilla_update_state(tile: impl UpdateTile + 'static, state: impl TileState + 'static) -> Self {
+        Self {
+            orientation: Orientation::North,
+            inner: InnerTile::Update(Box::new(tile)),
+            source: ObjectSource::Vanilla,
+            should_tick: false,
+            state: Some(Box::new(state)),
+        }
+    }
+
+    pub fn vanilla_update_ticking_state(tile: impl UpdateTile + 'static, state: impl TileState + 'static) -> Self {
+        Self {
+            orientation: Orientation::North,
+            inner: InnerTile::Update(Box::new(tile)),
+            source: ObjectSource::Vanilla,
+            should_tick: true,
+            state: Some(Box::new(state)),
+        }
+    }
+}
+
+pub trait TileState: Send + Sync {
+    fn box_clone(&self) -> Box<dyn TileState>;
+
+    fn save_to_vec(&self) -> Vec<u8>;
+
+    fn load_into_self(&mut self, data: Vec<u8>);
+    
+    fn client_state(&self) -> usize;
 }
