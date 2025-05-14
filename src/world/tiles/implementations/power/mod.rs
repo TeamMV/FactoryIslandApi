@@ -1,5 +1,14 @@
 use std::sync::{Arc};
+use mvengine::event::EventBus;
+use mvutils::Savable;
+use mvutils::unsafe_utils::Unsafe;
 use parking_lot::RwLock;
+use crate::event::Event;
+use crate::FactoryIsland;
+use crate::world::tiles::pos::TilePos;
+use crate::world::tiles::tiles::InnerTile;
+use crate::world::tiles::update::{UpdateHandler, UpdateTile};
+use crate::world::World;
 
 pub mod generator;
 pub mod lamp;
@@ -12,7 +21,7 @@ pub mod lamp;
 // 3 types of tick
 
 // 1) output ticks, machines which have their outputs get ticked (if they have a buffer with available output they also get ticked)
-// This output it added to network
+// This output is added to network
 // 2) consumption tick: after output is registered into a network, consumers will receive a consumption tick, they will be allowed to consume power
 // during this the machine is allowed to modify the total power in the network, both pulling and pushing power
 // machines will only be able to run this consumption once per tick
@@ -39,7 +48,11 @@ pub type Joule = f64;
 pub type Amperage = f64;
 pub type Voltage = f64;
 
-pub trait PowerGenerator {
+pub type NetworkId = u64;
+
+pub trait PowerGenerator: Send + Sync {
+    fn network_id(&self) -> NetworkId;
+
     fn max_amperage(&self) -> Amperage;
     fn voltage(&self) -> Voltage;
 
@@ -50,6 +63,10 @@ pub trait PowerGenerator {
 
     fn has_ticked(&self) -> bool;
     fn end_tick(&mut self);
+
+    fn box_clone(&self) -> Box<dyn PowerGenerator>;
+    fn save_to_vec(&self) -> Vec<u8>;
+    fn load_into_self(&mut self, data: Vec<u8>);
 }
 
 // Input machines (lamp, processor, etc...):
@@ -60,14 +77,18 @@ pub trait PowerGenerator {
 // try to consume correct amount of power from the network
 // if insufficient power is provided, try to consume required extra from buffer
 // if power still insufficient, consumption is done however task isn't executed
+// in the case that the task isn't executed, consumed power is stored and the machine will NOT count itself as ticked
+// this is because a machine may be ticked again in the same tick with some extra power, which could allow it to run
 // finish execution and return network with consumed power taken
 
-// during buffer tick
+// during buffer tick:
 // get network, attempt to extract max throughput of buffer charge
 // if not fully able to take power, take whatever it can and push to buffer
 // any excess remains in network for other machines to charge off of
 
-pub trait PowerConsumer {
+pub trait PowerConsumer: Send + Sync {
+    fn network_id(&self) -> NetworkId;
+
     fn voltage(&self) -> Voltage;
     fn expected_ampergae(&self) -> Amperage;
 
@@ -78,6 +99,10 @@ pub trait PowerConsumer {
 
     fn has_ticked(&self) -> bool;
     fn end_tick(&mut self);
+
+    fn box_clone(&self) -> Box<dyn PowerConsumer>;
+    fn save_to_vec(&self) -> Vec<u8>;
+    fn load_into_self(&mut self, data: Vec<u8>);
 }
 
 // Transformer
@@ -96,20 +121,24 @@ pub trait PowerConsumer {
 // if there isn't excess nothing is returned to input network
 // if there is excess below P a fraction of the power is returned to input network
 
-pub trait PowerTransformer {
+pub trait PowerTransformer: Send + Sync {
     fn min_ratio(&self) -> f64;
     fn max_ratio(&self) -> f64;
     
     fn max_voltage(&self) -> Voltage;
     fn max_amperage(&self) -> Amperage;
     
-    fn tick(&mut self);
+    fn tick(&mut self, source: &mut PowerNetwork, world: &mut World, event_bus: &mut EventBus<Event>, fi: &FactoryIsland);
 
-    fn input_network(&self) -> Arc<RwLock<PowerNetwork>>;
-    fn output_network(&self) -> Arc<RwLock<PowerNetwork>>;
+    fn input_network(&self) -> NetworkId;
+    fn output_network(&self) -> NetworkId;
 
     fn has_ticked(&self) -> bool;
     fn end_tick(&mut self);
+
+    fn box_clone(&self) -> Box<dyn PowerTransformer>;
+    fn save_to_vec(&self) -> Vec<u8>;
+    fn load_into_self(&mut self, data: Vec<u8>);
 }
 
 // Network
@@ -128,25 +157,38 @@ pub trait PowerTransformer {
 
 // if end of tick and transformer didn't get ticked, run autotick method, ignore transformer
 
+// Note that tick() doesn't check whether it has been ticked yet, as it MAY be ticked more than once. This is possible because each individual component may only be ticked once
+// However components that didn't receive enough power are allowed to tick again, which allows the extra power to be used to finish their tick
+
 // during non autotick, save power excess during frame, if multiple transformers, the tick wont tick generators second time, but will have the excess power available from the generators
 
-
-
+#[derive(Clone, Savable)]
 pub struct PowerNetwork {
+    #[unsaved]
     current_power: Joule,
+    #[unsaved]
+    was_ticked: bool,
 
+    id: NetworkId,
     voltage: Voltage,
 
-    // adapt to actually work with our system
-    inputs: Vec<Arc<dyn PowerGenerator>>,
-    outputs: Vec<Arc<dyn PowerConsumer>>,
-    input_transformers: Vec<Arc<dyn PowerTransformer>>,
-    output_transformers: Vec<Arc<dyn PowerTransformer>>,
+    inputs: Vec<TilePos>,
+    outputs: Vec<TilePos>,
+    input_transformers: Vec<TilePos>,
+    output_transformers: Vec<TilePos>,
 }
 
 impl PowerNetwork {
     pub fn is_autotick(&self) -> bool {
         self.input_transformers.is_empty()
+    }
+
+    pub fn was_ticked(&self) -> bool {
+        self.was_ticked
+    }
+
+    pub fn id(&self) -> NetworkId {
+        self.id
     }
 
     pub fn voltage(&self) -> Voltage {
@@ -162,51 +204,74 @@ impl PowerNetwork {
         self.current_power >= 0.0
     }
 
-    pub fn tick(&mut self) {
-        // for generator in &self.inputs {
-        //     if !generator.has_ticked() {
-        //         if let Some(power) = generator.generate() {
-        //             self.current_power += power;
-        //         }
-        //     }
-        // }
-        //
-        // for transformer in &self.output_transformers {
-        //     if !transformer.has_ticked() {
-        //         transformer.tick();
-        //     }
-        // }
-        //
-        // for output in &self.outputs {
-        //     if !output.has_ticked() {
-        //         output.consume_tick(self);
-        //     }
-        // }
-        //
-        // // buffer phase
-        // for output in &self.outputs {
-        //     if output.has_buffer() {
-        //         output.buffer_tick(self);
-        //     }
-        // }
-        //
-        // for generator in &self.inputs {
-        //     if generator.has_buffer() {
-        //         generator.buffer_tick(self);
-        //     }
-        // }
+    pub fn insert_power(&mut self, power: Joule) {
+        self.current_power += power;
+    }
+
+    pub fn tick(&mut self, world: &mut World, event_bus: &mut EventBus<Event>, fi: &FactoryIsland) {
+        self.was_ticked = true;
+        for pos in self.inputs.clone() {
+            if let Some(generator) = world.get_tile_at(pos, event_bus) {
+                let mut lock = generator.write();
+                if let InnerTile::PowerGenerator(generator) = &mut lock.info.inner {
+                    if !generator.has_ticked() {
+                        if let Some(power) = generator.generate() {
+                            self.current_power += power;
+                        }
+                    }
+                }
+            }
+        }
+
+        for pos in self.output_transformers.clone() {
+            if let Some(transformer) = world.get_tile_at(pos, event_bus) {
+                let mut lock = transformer.write();
+                if let InnerTile::PowerTransformer(transformer) = &mut lock.info.inner {
+                    let transformer = unsafe { Unsafe::cast_mut_static(transformer) };
+                    drop(lock);
+                    if !transformer.has_ticked() {
+                        transformer.tick(self, world, event_bus, fi);
+                    }
+                }
+            }
+        }
+
+        for pos in self.outputs.clone() {
+            if let Some(consumer) = world.get_tile_at(pos, event_bus) {
+                let mut lock = consumer.write();
+                if let InnerTile::PowerConsumer(consumer) = &mut lock.info.inner {
+                    if !consumer.has_ticked() {
+                        consumer.consume_tick(self);
+                    }
+                }
+            }
+        }
+
+        // Buffer phase
+        for pos in self.outputs.clone() {
+            if let Some(consumer) = world.get_tile_at(pos, event_bus) {
+                let mut lock = consumer.write();
+                if let InnerTile::PowerConsumer(consumer) = &mut lock.info.inner {
+                    if consumer.has_buffer() {
+                        consumer.buffer_tick(self);
+                    }
+                }
+            }
+        }
+
+        for pos in self.inputs.clone() {
+            if let Some(generator) = world.get_tile_at(pos, event_bus) {
+                let mut lock = generator.write();
+                if let InnerTile::PowerGenerator(generator) = &mut lock.info.inner {
+                    if generator.has_buffer() {
+                        generator.buffer_tick(self);
+                    }
+                }
+            }
+        }
     }
 
     pub fn end_tick(&mut self) {
-        // self.current_power = 0.0;
-        // for input in &self.inputs {
-        //    input.end_tick();
-        // }
-        // for output in &self.outputs {
-        //    output.end_tick();
-        // }
-        // for transformer in &self.output_transformers {
-        //    transformer.end_tick();
-        // }
+        self.was_ticked = false;
     }
 }

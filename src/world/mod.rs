@@ -359,8 +359,20 @@ impl World {
         
         for tile in tiles {
             let mut lock = tile.write();
-            if let InnerTile::Update(update) = &mut lock.info.inner {
-                update.end_tick();
+            match &mut lock.info.inner {
+                InnerTile::Static => {}
+                InnerTile::Update(update) => {
+                    update.end_tick();
+                }
+                InnerTile::PowerGenerator(generator) => {
+                    generator.end_tick();
+                }
+                InnerTile::PowerTransformer(transformer) => {
+                    transformer.end_tick();
+                }
+                InnerTile::PowerConsumer(consumer) => {
+                    consumer.end_tick();
+                }
             }
         }
     }

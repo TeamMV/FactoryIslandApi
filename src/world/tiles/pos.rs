@@ -1,8 +1,9 @@
 use std::fmt::{Debug, Formatter};
 use mvutils::Savable;
+use mvutils::save::{Loader, Savable, Saver};
 use crate::world::{ChunkPos, CHUNK_SIZE};
 
-#[derive(Clone, Default, Savable)]
+#[derive(Clone, Default)]
 pub struct TilePos {
     pub raw: (i32, i32),
     pub in_chunk_x: usize,
@@ -81,5 +82,15 @@ impl From<(i32, i32)> for TilePos {
 impl Debug for TilePos {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str(&format!("raw:{:?}, cx:{}, cz:{}, wx:{}, wz:{}", self.raw, self.in_chunk_x, self.in_chunk_z, self.world_chunk_x, self.world_chunk_z))
+    }
+}
+
+impl Savable for TilePos {
+    fn save(&self, saver: &mut impl Saver) {
+        self.raw.save(saver);
+    }
+
+    fn load(loader: &mut impl Loader) -> Result<Self, String> {
+        <(i32, i32)>::load(loader).map(Self::from)
     }
 }

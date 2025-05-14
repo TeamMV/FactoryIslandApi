@@ -6,8 +6,8 @@ edition = "2021"
 [dependencies]
 mvlogger = "0.4.0"
 mvutils = "1.3.4"
-mvengine = { path = "../../MVEngineRev" }
-mvengine_proc = { path = "../../MVEngineRev/Proc", package = "mvengine-proc-macro" }
+mvengine = { path = "../../MVEngine" }
+mvengine_proc = { path = "../../MVEngine/Proc", package = "mvengine-proc-macro" }
 
 log = "0.4.25"
 parking_lot = "0.12.3"

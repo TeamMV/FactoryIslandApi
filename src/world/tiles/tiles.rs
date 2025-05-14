@@ -7,6 +7,7 @@ use mvengine::utils::savers::SaveArc;
 use mvutils::save::{Loader, Savable, Saver};
 use mvutils::enum_val;
 use parking_lot::RwLock;
+use crate::world::tiles::implementations::power::{PowerConsumer, PowerGenerator, PowerTransformer};
 
 pub type TileType = SaveArc<RwLock<Tile>>;
 
@@ -30,6 +31,21 @@ impl Savable for Tile {
             InnerTile::Static => 0u8.save(saver),
             InnerTile::Update(b) => {
                 1u8.save(saver);
+                let vec = b.save_to_vec();
+                vec.save(saver);
+            }
+            InnerTile::PowerGenerator(b) => {
+                2u8.save(saver);
+                let vec = b.save_to_vec();
+                vec.save(saver);
+            }
+            InnerTile::PowerTransformer(b) => {
+                3u8.save(saver);
+                let vec = b.save_to_vec();
+                vec.save(saver);
+            }
+            InnerTile::PowerConsumer(b) => {
+                4u8.save(saver);
                 let vec = b.save_to_vec();
                 vec.save(saver);
             }
@@ -58,6 +74,27 @@ impl Savable for Tile {
                     inner.load_into_self(vec);
                     Ok(InnerTile::Update(inner))
                 },
+                2 => {
+                    let vec = Vec::<u8>::load(loader)?;
+                    let inner = template.info.inner.clone();
+                    let mut inner = enum_val!(InnerTile, inner, PowerGenerator);
+                    inner.load_into_self(vec);
+                    Ok(InnerTile::PowerGenerator(inner))
+                },
+                3 => {
+                    let vec = Vec::<u8>::load(loader)?;
+                    let inner = template.info.inner.clone();
+                    let mut inner = enum_val!(InnerTile, inner, PowerTransformer);
+                    inner.load_into_self(vec);
+                    Ok(InnerTile::PowerTransformer(inner))
+                },
+                4 => {
+                    let vec = Vec::<u8>::load(loader)?;
+                    let inner = template.info.inner.clone();
+                    let mut inner = enum_val!(InnerTile, inner, PowerConsumer);
+                    inner.load_into_self(vec);
+                    Ok(InnerTile::PowerConsumer(inner))
+                },
                 _ => Err("Illegal variant".to_string())
             }?;
             template.info.inner = inner;
@@ -77,7 +114,10 @@ impl Savable for Tile {
 
 pub enum InnerTile {
     Static,
-    Update(Box<dyn UpdateTile>)
+    Update(Box<dyn UpdateTile>),
+    PowerGenerator(Box<dyn PowerGenerator>),
+    PowerTransformer(Box<dyn PowerTransformer>),
+    PowerConsumer(Box<dyn PowerConsumer>),
 }
 
 impl Clone for InnerTile {
@@ -86,6 +126,15 @@ impl Clone for InnerTile {
             InnerTile::Static => Self::Static,
             InnerTile::Update(b) => {
                 InnerTile::Update(b.box_clone())
+            }
+            InnerTile::PowerGenerator(b) => {
+                InnerTile::PowerGenerator(b.box_clone())
+            }
+            InnerTile::PowerTransformer(b) => {
+                InnerTile::PowerTransformer(b.box_clone())
+            }
+            InnerTile::PowerConsumer(b) => {
+                InnerTile::PowerConsumer(b.box_clone())
             }
         }
     }
