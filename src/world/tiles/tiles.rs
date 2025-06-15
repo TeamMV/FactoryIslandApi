@@ -120,6 +120,10 @@ pub enum InnerTile {
     PowerConsumer(Box<dyn PowerConsumer>),
 }
 
+struct Inv {
+    
+}
+
 impl Clone for InnerTile {
     fn clone(&self) -> Self {
         match self {
@@ -241,4 +245,6 @@ pub trait TileState: Send + Sync {
     fn load_into_self(&mut self, data: Vec<u8>);
     
     fn client_state(&self) -> usize;
+    
+    fn apply_client_state(&mut self, client_state: usize);
 }

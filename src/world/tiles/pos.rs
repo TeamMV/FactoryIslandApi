@@ -1,7 +1,8 @@
 use std::fmt::{Debug, Formatter};
+use mvengine::ui::geometry::SimpleRect;
 use mvutils::Savable;
 use mvutils::save::{Loader, Savable, Saver};
-use crate::world::{ChunkPos, CHUNK_SIZE};
+use crate::world::{ChunkPos, PixelUnit, CHUNK_SIZE};
 
 #[derive(Clone, Default)]
 pub struct TilePos {
@@ -32,6 +33,16 @@ impl TilePos {
             chunk_pos.0 * CHUNK_SIZE + x,
             chunk_pos.1 * CHUNK_SIZE + z
         )
+    }
+    
+    pub fn from_screen(screen_coords: PixelUnit, view_area: &SimpleRect, tile_size: i32) -> Self {
+        let pixel_offset_x = screen_coords.0 - view_area.x;
+        let pixel_offset_y = screen_coords.1 - view_area.y;
+
+        let tile_x = pixel_offset_x / tile_size;
+        let tile_z = pixel_offset_y / tile_size;
+
+        Self::new(tile_x, tile_z)
     }
 
     pub fn up(&self, n: i32) -> Self {

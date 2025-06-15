@@ -9,7 +9,7 @@ use crate::registry::GameObjects;
 use crate::server::packets::common::{ClientDataPacket, PlayerData, ServerStatePacket, TileKind};
 use crate::server::packets::player::{OtherPlayerJoinPacket, OtherPlayerLeavePacket, OtherPlayerMovePacket, PlayerMovePacket};
 use crate::server::{ClientBoundPacket, ServerBoundPacket};
-use crate::world::{World, WorldType};
+use crate::world::{TileSetReason, World, WorldType};
 use event::player::{PlayerJoinEvent, PlayerLeaveEvent};
 use hashbrown::HashSet;
 use log::{debug, error, info};
@@ -30,8 +30,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use mvengine::ui::timing::{AnimationState, PeriodicTask, TIMING_MANAGER};
 use mvutils::clock::Clock;
 use mvutils::unsafe_utils::Unsafe;
+use parking_lot::lock_api::RwLock;
 use crate::registry::tiles::TILE_REGISTRY;
+use crate::server::packets::world::TileSetPacket;
+use crate::world::chunk::ToClientObject;
 use crate::world::tiles::implementations::power::lamp::LampState;
+use crate::world::tiles::Orientation;
+use crate::world::tiles::tiles::TileType;
 
 pub mod event;
 pub mod world;
@@ -226,6 +231,42 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
                         }
                     }
                 }
+            }
+            ServerBoundPacket::TileSet(packet) => {
+                if let Some(mut tile) = TILE_REGISTRY.create_object(packet.tile_id) {
+                    if let Some(state) = &mut tile.info.state {
+                        state.apply_client_state(packet.tile_state);
+                    }
+                    let cloned = self.world.clone();
+                    let mut world_lock = cloned.lock();
+                    let player = self.players.get(&client.id()).cloned();
+                    if let Some(player) = player {
+                        let reason = TileSetReason::Player(player);
+                        
+                        let to_client = ToClientObject {
+                            id: packet.tile_id as u16,
+                            source: tile.info.source.clone(),
+                            orientation: packet.orientation,
+                            state: packet.tile_state,
+                        };
+                        
+                        world_lock.set_tile_at(packet.pos.clone(), tile.to_type(), reason.clone(), self);
+                        
+                        // Dont filter out the current id as the tile only gets set on the client if the server says its okay. just to avoid desync
+                        for (_, other_player) in self.players.iter() {
+                            let lock = other_player.lock();
+                            if let Some(endpoint) = lock.client_endpoint() {
+                                endpoint.send(ClientBoundPacket::TileSet(TileSetPacket {
+                                    pos: packet.pos.clone(),
+                                    tile: to_client.clone(),
+                                    reason: reason.clone(),
+                                }));
+                            }
+                        }
+                    }
+                } else {
+                    info!("Received Invalid tile from client with id: {}", packet.tile_id);
+                };
             }
         }
     }

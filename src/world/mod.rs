@@ -260,7 +260,7 @@ impl World {
         lock.tiles[Chunk::get_index(&pos)].clone()
     }
 
-    pub fn set_tile_at(&mut self, pos: TilePos, tile: TileType, event_bus: &mut EventBus<Event>, reason: TileSetReason, fi: &FactoryIsland) {
+    pub fn set_tile_at(&mut self, pos: TilePos, tile: TileType, reason: TileSetReason, fi: &mut FactoryIsland) {
         let event = TileSetEvent {
             has_been_cancelled: false,
             world: self.arc.upgrade().unwrap().clone(),
@@ -269,9 +269,9 @@ impl World {
             reason: reason.clone(),
         };
         let mut event = Event::TileSetEvent(event);
-        event_bus.dispatch(&mut event);
+        fi.event_bus.dispatch(&mut event);
 
-        let chunk = self.get_chunk(pos.chunk_pos, event_bus);
+        let chunk = self.get_chunk(pos.chunk_pos, &mut fi.event_bus);
         let mut lock = chunk.lock();
         lock.tiles[Chunk::get_index(&pos)] = Some(tile.clone());
         drop(lock);

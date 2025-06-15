@@ -29,7 +29,6 @@ macro_rules! define_tiles {
 define_tiles!(Tiles, register_all, [
     air = TileInfo::vanilla_static(),
     wood = TileInfo::vanilla_static(),
-    test = TileInfo::vanilla_update(TestUpdateTile::new()),
     generator = TileInfo::vanilla_update_ticking(Generator::new()),
-    lamp = TileInfo::vanilla_update_state(Lamp::new(), LampState::new())
+    lamp = TileInfo::vanilla_update_state(Lamp::new(), LampState::new()),
 ]);

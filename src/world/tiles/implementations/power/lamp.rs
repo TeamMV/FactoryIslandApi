@@ -52,6 +52,10 @@ impl TileState for LampState {
     fn client_state(&self) -> usize {
         self.on.yn(1, 0)
     }
+
+    fn apply_client_state(&mut self, client_state: usize) {
+        self.on = client_state == 1;
+    }
 }
 
 #[derive(Clone, Savable)]

@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 mvlogger = "0.4.0"
-mvutils = "1.3.4"
+mvutils = "1.4.4"
 mvengine = { path = "../../MVEngine" }
 mvengine_proc = { path = "../../MVEngine/Proc", package = "mvengine-proc-macro" }
 

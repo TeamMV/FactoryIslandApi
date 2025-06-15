@@ -1,5 +1,5 @@
 use hashbrown::HashMap;
-use mvengine::graphics::comp::Drawable;
+use mvengine::graphics::Drawable;
 use mvengine::ui::res::MVR;
 use mvutils::Savable;
 
