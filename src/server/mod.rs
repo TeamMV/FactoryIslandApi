@@ -28,7 +28,7 @@ pub fn startup_internal_server() {
             match line {
                 Ok(command) => {
                     let mut lock = handler_cloned.lock();
-                    lock.on_command(command);
+                    lock.on_command(command, None);
                 }
                 Err(e) => error!("Error reading line: {}", e),
             }

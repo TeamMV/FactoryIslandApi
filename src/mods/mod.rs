@@ -5,15 +5,17 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use hashbrown::HashMap;
 use libloading::{Library, Symbol};
-use log::{error, info};
+use log::{error, info, warn};
 use mvengine::event::EventBus;
 use mvutils::lazy;
 use mvutils::utils::TetrahedronOp;
+use crate::command::CommandProcessor;
 use crate::event::Event;
-use crate::registry;
+use crate::{command, registry};
 use crate::registry::{GameObjects, Registry};
 use crate::registry::terrain::TerrainTiles;
 use crate::world::tiles::terrain::TerrainTile;
+use crate::world::tiles::tiles::Tile;
 
 lazy! {
     pub static DEFAULT_MOD_DIR: PathBuf = {
@@ -42,6 +44,8 @@ impl ModLoader {
             let mut context = ModContext {
                 events,
                 terrain_registry: &registry::terrain::TERRAIN_REGISTRY,
+                tile_registry: &registry::tiles::TILE_REGISTRY,
+                command_processor: &command::COMMAND_PROCESSOR,
                 objects
             };
 
@@ -53,6 +57,10 @@ impl ModLoader {
                         let fi_mod = LoadedMod::load(path, &mut context);
                         if let Ok(fi_mod) = fi_mod {
                             info!("Mod '{}' has been loaded", fi_mod.inner.id);
+                            if self.loaded.contains_key(&fi_mod.inner.id) {
+                                warn!("Two mods have the same modid! That is considered illegal and will be handled by the authorities.");
+                                continue;
+                            }
                             self.loaded.insert(fi_mod.inner.id.clone(), fi_mod);
                         } else {
                             if let Err(e) = fi_mod {
@@ -99,6 +107,8 @@ impl LoadedMod {
 pub struct ModContext<'a> {
     pub events: &'a mut EventBus<Event>,
     pub terrain_registry: &'a Registry<TerrainTile>,
+    pub tile_registry: &'a Registry<Tile>,
+    pub command_processor: &'a CommandProcessor,
     pub objects: GameObjects
 }
 

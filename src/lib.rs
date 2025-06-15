@@ -1,4 +1,4 @@
-use crate::command::CommandProcessor;
+use crate::command::{CommandProcessor, CommandSender, COMMAND_PROCESSOR};
 use crate::event::common::{ServerCommandEvent, ServerTickEvent};
 use crate::event::player::PlayerMoveEvent;
 use crate::event::{Event, GameStartEvent};
@@ -7,7 +7,7 @@ use crate::player::{Player, PlayerType};
 use crate::registry::terrain::TerrainTiles;
 use crate::registry::GameObjects;
 use crate::server::packets::common::{ClientDataPacket, PlayerData, ServerStatePacket, TileKind};
-use crate::server::packets::player::{OtherPlayerJoinPacket, OtherPlayerLeavePacket, OtherPlayerMovePacket, PlayerMovePacket};
+use crate::server::packets::player::{OtherPlayerChatPacket, OtherPlayerJoinPacket, OtherPlayerLeavePacket, OtherPlayerMovePacket, PlayerMovePacket};
 use crate::server::{ClientBoundPacket, ServerBoundPacket};
 use crate::world::{TileSetReason, World, WorldType};
 use event::player::{PlayerJoinEvent, PlayerLeaveEvent};
@@ -77,14 +77,8 @@ impl FactoryIsland {
         self.event_bus.dispatch(&mut Event::ServerTickEvent(ServerTickEvent));
     }
 
-    pub fn on_command(&mut self, command: String) {
-        let mut event = Event::ServerCommandEvent(ServerCommandEvent {
-            has_been_cancelled: false,
-            command,
-        });
-        self.event_bus.dispatch(&mut event);
-        let command_event = enum_val!(Event, event, ServerCommandEvent);
-        CommandProcessor::process(command_event.command.as_str(), self);
+    pub fn on_command(&mut self, command: String, player: Option<PlayerData>) {
+        COMMAND_PROCESSOR.process(player.map_or(CommandSender::Console, |d| CommandSender::Player(d)), command, self);
     }
 }
 
@@ -97,6 +91,7 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
         
         let terrain_tiles = registry::terrain::register_all();
         let tiles = registry::tiles::register_all();
+        command::register_commands();
         
         let objects = GameObjects {
             terrain: terrain_tiles,
@@ -241,7 +236,7 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
                     let mut world_lock = cloned.lock();
                     let player = self.players.get(&client.id()).cloned();
                     if let Some(player) = player {
-                        let reason = TileSetReason::Player(player);
+                        let reason = TileSetReason::Player(player.lock().data.clone());
                         
                         let to_client = ToClientObject {
                             id: packet.tile_id as u16,
@@ -249,24 +244,51 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
                             orientation: packet.orientation,
                             state: packet.tile_state,
                         };
-                        
+
                         world_lock.set_tile_at(packet.pos.clone(), tile.to_type(), reason.clone(), self);
                         
                         // Dont filter out the current id as the tile only gets set on the client if the server says its okay. just to avoid desync
                         for (_, other_player) in self.players.iter() {
                             let lock = other_player.lock();
                             if let Some(endpoint) = lock.client_endpoint() {
+                                println!("send data");
                                 endpoint.send(ClientBoundPacket::TileSet(TileSetPacket {
                                     pos: packet.pos.clone(),
                                     tile: to_client.clone(),
                                     reason: reason.clone(),
                                 }));
+                                println!("sent data");
                             }
                         }
                     }
                 } else {
                     info!("Received Invalid tile from client with id: {}", packet.tile_id);
                 };
+            },
+            ServerBoundPacket::PlayerChat(packet) => {
+                if let Some(player) = self.players.get(&client.id()) {
+                    let lock = player.lock();
+                    let client_data = lock.data.clone();
+                    drop(lock);
+                    let data = PlayerData {
+                        client_id: client.id(),
+                        data: client_data,
+                    };
+                    if packet.message.chars().next() == Some('/') {
+                        let command = packet.message[1..].trim().to_string();
+                        self.on_command(command, Some(data));
+                    } else {
+                        for (_, other_player) in self.players.iter() {
+                            let lock = other_player.lock();
+                            if let Some(endpoint) = lock.client_endpoint() {
+                                endpoint.send(ClientBoundPacket::OtherPlayerChat(OtherPlayerChatPacket {
+                                    player: data.clone(),
+                                    message: packet.message.clone(),
+                                }));
+                            }
+                        }
+                    }
+                }
             }
         }
     }

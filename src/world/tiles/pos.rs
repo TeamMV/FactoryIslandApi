@@ -36,11 +36,11 @@ impl TilePos {
     }
     
     pub fn from_screen(screen_coords: PixelUnit, view_area: &SimpleRect, tile_size: i32) -> Self {
-        let pixel_offset_x = screen_coords.0 - view_area.x;
-        let pixel_offset_y = screen_coords.1 - view_area.y;
+        let pixel_offset_x = screen_coords.0 + view_area.x;
+        let pixel_offset_y = screen_coords.1 + view_area.y;
 
-        let tile_x = pixel_offset_x / tile_size;
-        let tile_z = pixel_offset_y / tile_size;
+        let tile_x = (pixel_offset_x as f32 / tile_size as f32).floor() as i32;
+        let tile_z = (pixel_offset_y as f32 / tile_size as f32).floor() as i32;
 
         Self::new(tile_x, tile_z)
     }

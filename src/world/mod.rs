@@ -36,6 +36,7 @@ use mvutils::unsafe_utils::Unsafe;
 use crate::FactoryIsland;
 use crate::registry::GameObjects;
 use crate::server::ClientBoundPacket;
+use crate::server::packets::common::ClientDataPacket;
 use crate::server::packets::world::TileSetPacket;
 use crate::world::tiles::tiles::{InnerTile, TileType};
 
@@ -401,7 +402,7 @@ impl World {
 #[derive(Clone, Savable)]
 pub enum TileSetReason {
     DontCare,
-    Player(PlayerType),
+    Player(ClientDataPacket),
 }
 
 impl Debug for TileSetReason {

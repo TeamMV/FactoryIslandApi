@@ -46,38 +46,10 @@ impl<T: Registerable> Registry<T> {
     }
 }
 
-pub trait Registerable: Clone + Savable {
+pub trait Registerable: Clone {
     type CreateInfo;
 
     fn with_id(id: usize, info: Self::CreateInfo) -> Self;
-
-    fn load_with_registry(loader: &mut impl Loader, registry: &Registry<Self>) -> Result<Self, String> {
-        if let Some(id) = loader.pop_u16() {
-            if let Some(t) = registry.create_object(id as usize) {
-                Ok(t)
-            } else {
-                Err(format!("Object with id {id} is not registered!"))
-            }
-        } else {
-            Err("Couldnt read object id".to_string())
-        }
-    }
-}
-
-impl<T: Registerable> Savable for Registry<T> {
-    fn save(&self, saver: &mut impl Saver) {
-        let lock = self.objects.read();
-        lock.save(saver);
-    }
-
-    fn load(loader: &mut impl Loader) -> Result<Self, String> {
-        let objects = Vec::<T>::load(loader)?;
-        let objects = RwLock::new(objects);
-        Ok(Self {
-            locked: AtomicBool::new(true),
-            objects,
-        })
-    }
 }
 
 #[derive(Clone)]

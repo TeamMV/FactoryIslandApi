@@ -1,6 +1,6 @@
 use mvengine::net::server::ClientId;
 use mvutils::Savable;
-use crate::server::packets::common::ClientDataPacket;
+use crate::server::packets::common::{ClientDataPacket, PlayerData};
 use crate::world::TileUnit;
 
 #[derive(Clone, Savable)]
@@ -23,4 +23,15 @@ pub struct OtherPlayerJoinPacket {
 #[derive(Clone, Savable)]
 pub struct OtherPlayerLeavePacket {
     pub client_id: ClientId,
+}
+
+#[derive(Clone, Savable)]
+pub struct PlayerChatPacket {
+    pub message: String,
+}
+
+#[derive(Clone, Savable)]
+pub struct OtherPlayerChatPacket {
+    pub player: PlayerData,
+    pub message: String,
 }
