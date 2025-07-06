@@ -27,7 +27,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{env, thread};
 use std::sync::atomic::{AtomicBool, Ordering};
-use mvengine::ui::timing::{AnimationState, PeriodicTask, TIMING_MANAGER};
 use mvutils::clock::Clock;
 use mvutils::unsafe_utils::Unsafe;
 use parking_lot::lock_api::RwLock;
