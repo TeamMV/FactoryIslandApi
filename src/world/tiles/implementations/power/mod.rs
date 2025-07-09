@@ -227,7 +227,7 @@ impl PowerNetwork {
             if let Some(transformer) = world.get_tile_at(pos, event_bus) {
                 let mut lock = transformer.write();
                 if let InnerTile::PowerTransformer(transformer) = &mut lock.info.inner {
-                    let transformer = unsafe { Unsafe::cast_mut_static(transformer) };
+                    let transformer = unsafe { Unsafe::cast_lifetime_mut(transformer) };
                     drop(lock);
                     if !transformer.has_ticked() {
                         transformer.tick(self, world, event_bus, fi);

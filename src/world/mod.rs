@@ -305,7 +305,7 @@ impl World {
             if let Some(tile) = &lock.tiles[index] {
                 let mut tile_lock = tile.write();
                 if let InnerTile::Update(updatable) = &mut tile_lock.info.inner {
-                    let updatable = unsafe { Unsafe::cast_mut_static(updatable) };
+                    let updatable = unsafe { Unsafe::cast_lifetime_mut(updatable) };
                     drop(tile_lock);
                     drop(lock);
                     updatable.send_update(pos, self, event_bus, fi);

@@ -58,7 +58,7 @@ pub struct FactoryIsland {
 
 impl FactoryIsland {
     pub fn tick(&mut self) {
-        let this = unsafe { Unsafe::cast_static(self) };
+        let this = unsafe { Unsafe::cast_lifetime(self) };
         let mut loaded_by_player = HashSet::new();
         for player in self.players.values() {
             let mut lock = player.lock();
