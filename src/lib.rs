@@ -250,13 +250,11 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
                         for (_, other_player) in self.players.iter() {
                             let lock = other_player.lock();
                             if let Some(endpoint) = lock.client_endpoint() {
-                                println!("send data");
                                 endpoint.send(ClientBoundPacket::TileSet(TileSetPacket {
                                     pos: packet.pos.clone(),
                                     tile: to_client.clone(),
                                     reason: reason.clone(),
                                 }));
-                                println!("sent data");
                             }
                         }
                     }
@@ -287,6 +285,14 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
                             }
                         }
                     }
+                }
+            }
+            ServerBoundPacket::RequestReload => {
+                if let Some(player) = self.players.get(&client.id()) {
+                    let mut lock = player.lock();
+                    lock.loaded_chunks.clear();
+                    let rdst = lock.data.render_distance;
+                    lock.after_move(rdst, &mut self.event_bus);
                 }
             }
         }

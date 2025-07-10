@@ -3,6 +3,13 @@ name = "Api"
 version = "0.1.0"
 edition = "2021"
 
+[profile.release]
+opt-level = 3
+strip = true
+lto = "fat"
+codegen-units = 1
+debug = false
+
 [dependencies]
 mvlogger = "0.4.0"
 mvutils = "1.4.4"

@@ -26,4 +26,5 @@ pub enum ServerBoundPacket {
     PlayerMove(PlayerMovePacket),
     TileSet(TileSetFromClientPacket),
     PlayerChat(PlayerChatPacket),
+    RequestReload,
 }

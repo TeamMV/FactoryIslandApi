@@ -47,14 +47,14 @@ impl Player {
 
     }
 
-    fn after_move(&mut self, render_distance: i32, event_bus: &mut EventBus<Event>) {        
+    pub(crate) fn after_move(&mut self, render_distance: i32, event_bus: &mut EventBus<Event>) {
         if let Some(world) = &self.world {
             let current_chunk = self.get_current_chunk();
             let mut world_lock = world.lock();
             let mut to_unload = self.loaded_chunks.clone();
             for chunk_x in (current_chunk.0 - render_distance)..=(current_chunk.0 + render_distance) {
                 for chunk_y in (current_chunk.1 - render_distance)..=(current_chunk.1 + render_distance) {
-                    if !world_lock.is_loaded((chunk_x, chunk_y)) {
+                    if !self.loaded_chunks.contains(&(chunk_x, chunk_y)) {
                         let chunk = world_lock.get_chunk((chunk_x, chunk_y), event_bus);
                         let chunk = chunk.lock();
                         let data_packet = ChunkDataPacket {
