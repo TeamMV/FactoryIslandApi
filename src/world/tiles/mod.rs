@@ -34,3 +34,13 @@ pub enum ObjectSource {
     Vanilla,
     Mod(String, ClientTileRes)
 }
+
+impl ObjectSource {
+    pub fn mod_simple(id: &str) -> Self {
+        Self::Mod(id.to_string(), ClientTileRes::empty())
+    }
+
+    pub fn mod_res(id: &str, res: ClientTileRes) -> Self {
+        Self::Mod(id.to_string(), res)
+    }
+}

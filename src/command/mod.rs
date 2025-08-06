@@ -2,12 +2,14 @@ pub mod players;
 pub mod chunks;
 pub mod stop;
 pub mod save;
+pub mod commands;
 
 use hashbrown::HashMap;
-use log::warn;
+use log::{debug, warn};
 use mvutils::{enum_val, lazy};
 use mvutils::unsafe_utils::DangerousCell;
 use crate::command::chunks::ChunksCommand;
+use crate::command::commands::CommandsCommand;
 use crate::command::players::PlayersCommand;
 use crate::command::save::SaveCommand;
 use crate::command::stop::StopCommand;
@@ -63,8 +65,12 @@ impl CommandProcessor {
         let mut parts = binding.split_whitespace();
         if let Some(cmd) = parts.next() {
             let cmd = cmd.to_string();
-            if let Some(id) = self.key_map.get().get(&cmd) {
-
+            debug!("Processing command: '{cmd}'");
+            let map = self.key_map.get();
+            debug!("Command list: {:?}", map);
+            debug!("Contains: {}", map.contains_key(&cmd));
+            if let Some(id) = map.get(&cmd) {
+                debug!("found!");
                 let mut event = Event::ServerCommandEvent(ServerCommandEvent {
                     has_been_cancelled: false,
                     command,
@@ -169,4 +175,5 @@ pub(crate) fn register_commands() {
     COMMAND_PROCESSOR.register(Command::new("chunks", vec![], None, ChunksCommand).unwrap(), &ObjectSource::Vanilla);
     COMMAND_PROCESSOR.register(Command::new("save", vec![], None, SaveCommand).unwrap(), &ObjectSource::Vanilla);
     COMMAND_PROCESSOR.register(Command::new("stop", vec![], None, StopCommand).unwrap(), &ObjectSource::Vanilla);
+    COMMAND_PROCESSOR.register(Command::new("commands", vec![], None, CommandsCommand).unwrap(), &ObjectSource::Vanilla);
 }

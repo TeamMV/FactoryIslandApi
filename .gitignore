@@ -1,3 +1,5 @@
 /target/
 .idea/
 /tests/ServerWrapper/target
+/ModPacker/target/
+/ModPacker/.idea/

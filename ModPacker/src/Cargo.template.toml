@@ -1,0 +1,12 @@
+[package]
+name = "{{crate_name}}"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+log = "0.4.27"
+mvlogger = "0.4.0"
+mvutils = "1.5.2"
+bytebuffer = "2.3.0"
+mvengine = { path = "{{mvengine_path}}" }
+mvengine_proc = { path = "{{mvengine_proc_path}}", package = "mvengine-proc-macro" }

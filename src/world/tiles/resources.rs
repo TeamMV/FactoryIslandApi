@@ -9,6 +9,12 @@ pub struct ClientTileRes {
 }
 
 impl ClientTileRes {
+    pub fn empty() -> Self {
+        Self {
+            res: HashMap::new(),
+        }
+    }
+
     pub fn of(state: usize, res: Drawable) -> Self {
         let mut map = HashMap::new();
         map.insert(state, res);
