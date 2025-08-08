@@ -12,8 +12,17 @@ pub struct LampTile {
     on: bool
 }
 
+impl LampTile {
+    pub fn new() -> Self {
+        Self {
+            handler: leak!(UpdateHandler::new()),
+            on: false,
+        }
+    }
+}
+
 impl UpdateTile for LampTile {
-    fn create_trait() -> UpdateTileTrait {
+    fn create_update_trait() -> UpdateTileTrait {
         UpdateTileTrait {
             get_handler,
             on_update_receive,
@@ -22,7 +31,7 @@ impl UpdateTile for LampTile {
 }
 
 impl TileState for LampTile {
-    fn create_trait() -> TileStateTrait {
+    fn create_state_trait() -> TileStateTrait {
         TileStateTrait {
             save_to_vec,
             load_into_self,
@@ -33,7 +42,7 @@ impl TileState for LampTile {
 }
 
 impl ObjControl for LampTile {
-    fn create_trait() -> ObjControlTrait {
+    fn create_oc_trait() -> ObjControlTrait {
         ObjControlTrait {
             create_copy,
             free,

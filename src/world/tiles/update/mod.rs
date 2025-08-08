@@ -62,5 +62,5 @@ impl Default for UpdateHandler {
 }
 
 pub trait UpdateTile {
-    fn create_trait() -> UpdateTileTrait;
+    fn create_update_trait() -> UpdateTileTrait;
 }

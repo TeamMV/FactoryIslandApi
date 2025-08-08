@@ -60,3 +60,10 @@ macro_rules! ptr_invoke_clone {
         }
     };
 }
+
+#[macro_export]
+macro_rules! this {
+    ($p:expr) => {
+        unsafe { $p as *mut () }
+    };
+}

@@ -7,7 +7,8 @@ use mvutils::save::{Loader, Savable, Saver};
 use mvutils::enum_val;
 use parking_lot::RwLock;
 use crate::mods::modsdk::MOpt;
-use crate::world::tiles::update::{This, UpdateTileTrait};
+use crate::{leak, this};
+use crate::world::tiles::update::{This, UpdateTile, UpdateTileTrait};
 
 pub type TileType = SaveArc<RwLock<Tile>>;
 
@@ -148,8 +149,13 @@ impl TileInfo {
             oct: None,
         }
     }
-    
-    pub fn vanilla_update(tile: This, handler: UpdateTileTrait, oct: ObjControlTrait) -> Self {
+
+    pub fn vanilla_update<T: UpdateTile + ObjControl>(
+        tile: T,
+        handler: UpdateTileTrait,
+        oct: ObjControlTrait,
+    ) -> Self {
+        let tile = this!(leak!(tile));
         Self {
             orientation: Orientation::North,
             inner: InnerTile::Update(handler, tile),
@@ -160,7 +166,12 @@ impl TileInfo {
         }
     }
 
-    pub fn vanilla_update_ticking(tile: This, handler: UpdateTileTrait, oct: ObjControlTrait) -> Self {
+    pub fn vanilla_update_ticking<T: UpdateTile + ObjControl>(
+        tile: T,
+        handler: UpdateTileTrait,
+        oct: ObjControlTrait,
+    ) -> Self {
+        let tile = this!(leak!(tile));
         Self {
             orientation: Orientation::North,
             inner: InnerTile::Update(handler, tile),
@@ -171,7 +182,12 @@ impl TileInfo {
         }
     }
 
-    pub fn vanilla_static_state(tile: This, state: TileStateTrait, oct: ObjControlTrait) -> Self {
+    pub fn vanilla_static_state<T: TileState + ObjControl>(
+        tile: T,
+        state: TileStateTrait,
+        oct: ObjControlTrait,
+    ) -> Self {
+        let tile = this!(leak!(tile));
         Self {
             orientation: Orientation::North,
             inner: InnerTile::Static,
@@ -182,7 +198,13 @@ impl TileInfo {
         }
     }
 
-    pub fn vanilla_update_state(tile: This, handler: UpdateTileTrait, state: TileStateTrait, oct: ObjControlTrait) -> Self {
+    pub fn vanilla_update_state<T: UpdateTile + TileState + ObjControl>(
+        tile: T,
+        handler: UpdateTileTrait,
+        state: TileStateTrait,
+        oct: ObjControlTrait,
+    ) -> Self {
+        let tile = this!(leak!(tile));
         Self {
             orientation: Orientation::North,
             inner: InnerTile::Update(handler, tile),
@@ -193,7 +215,13 @@ impl TileInfo {
         }
     }
 
-    pub fn vanilla_update_ticking_state(tile: This, handler: UpdateTileTrait, state: TileStateTrait, oct: ObjControlTrait) -> Self {
+    pub fn vanilla_update_ticking_state<T: UpdateTile + TileState + ObjControl>(
+        tile: T,
+        handler: UpdateTileTrait,
+        state: TileStateTrait,
+        oct: ObjControlTrait,
+    ) -> Self {
+        let tile = this!(leak!(tile));
         Self {
             orientation: Orientation::North,
             inner: InnerTile::Update(handler, tile),
@@ -215,7 +243,7 @@ pub struct TileStateTrait {
 }
 
 pub trait TileState {
-    fn create_trait() -> TileStateTrait;
+    fn create_state_trait() -> TileStateTrait;
 }
 
 #[derive(Clone)]
@@ -226,5 +254,5 @@ pub struct ObjControlTrait {
 }
 
 pub trait ObjControl {
-    fn create_trait() -> ObjControlTrait;
+    fn create_oc_trait() -> ObjControlTrait;
 }
