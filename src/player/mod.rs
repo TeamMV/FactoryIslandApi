@@ -9,8 +9,7 @@ use mvutils::save::Savable;
 use mvutils::Savable;
 use parking_lot::Mutex;
 use std::sync::Arc;
-use mvengine::event::EventBus;
-use crate::event::Event;
+use crate::mods::ModLoader;
 
 pub type PlayerType = SaveArc<Mutex<Player>>;
 
@@ -24,7 +23,7 @@ pub struct Player {
     client_endpoint: Option<Arc<ClientEndpoint>>,
     #[unsaved]
     world: Option<WorldType>,
-    position: TileUnit,
+    pub position: TileUnit,
     pub loaded_chunks: HashSet<ChunkPos>,
 }
 
@@ -34,6 +33,7 @@ impl Player {
             data: ClientDataPacket {
                 name: DEFAULT_NAME.to_string(),
                 render_distance: 1,
+                client_id: endpoint.id()
             },
             client_endpoint: Some(endpoint),
             world: Some(world),
@@ -47,7 +47,7 @@ impl Player {
 
     }
 
-    pub(crate) fn after_move(&mut self, render_distance: i32, event_bus: &mut EventBus<Event>) {
+    pub(crate) fn after_move(&mut self, render_distance: i32) {
         if let Some(world) = &self.world {
             let current_chunk = self.get_current_chunk();
             let mut world_lock = world.lock();
@@ -55,7 +55,7 @@ impl Player {
             for chunk_x in (current_chunk.0 - render_distance)..=(current_chunk.0 + render_distance) {
                 for chunk_y in (current_chunk.1 - render_distance)..=(current_chunk.1 + render_distance) {
                     if !self.loaded_chunks.contains(&(chunk_x, chunk_y)) {
-                        let chunk = world_lock.get_chunk((chunk_x, chunk_y), event_bus);
+                        let chunk = world_lock.get_chunk((chunk_x, chunk_y));
                         let chunk = chunk.lock();
                         let data_packet = ChunkDataPacket {
                             pos: (chunk_x, chunk_y),
@@ -89,20 +89,20 @@ impl Player {
         self.loaded_chunks.clear();
     }
 
-    pub fn move_to(&mut self, pos: TileUnit, event_bus: &mut EventBus<Event>) {
+    pub fn move_to(&mut self, pos: TileUnit) {
         self.position = pos;
-        self.after_move(self.data.render_distance, event_bus);
+        self.after_move(self.data.render_distance);
     }
 
-    pub fn move_by(&mut self, dpos: TileUnit, event_bus: &mut EventBus<Event>) {
+    pub fn move_by(&mut self, dpos: TileUnit) {
         self.position.0 += dpos.0;
         self.position.1 += dpos.1;
-        self.after_move(self.data.render_distance, event_bus);
+        self.after_move(self.data.render_distance);
     }
 
-    pub fn apply_data(&mut self, packet: ClientDataPacket, event_bus: &mut EventBus<Event>) {
+    pub fn apply_data(&mut self, packet: ClientDataPacket) {
         self.data = packet;
-        self.after_move(self.data.render_distance, event_bus);
+        self.after_move(self.data.render_distance);
 
 
         if let Some(world) = &self.world {
@@ -110,7 +110,7 @@ impl Player {
             let current_chunk = self.get_current_chunk();
             for chunk_x in (current_chunk.0 - self.data.render_distance)..=(current_chunk.0 + self.data.render_distance) {
                 for chunk_y in (current_chunk.1 - self.data.render_distance)..=(current_chunk.1 + self.data.render_distance) {
-                    let chunk = world_lock.get_chunk((chunk_x, chunk_y), event_bus);
+                    let chunk = world_lock.get_chunk((chunk_x, chunk_y));
                     let chunk = chunk.lock();
                     let data_packet = ChunkDataPacket {
                         pos: (chunk_x, chunk_y),

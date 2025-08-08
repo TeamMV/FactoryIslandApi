@@ -2,16 +2,18 @@ use std::fmt::{Debug, Formatter};
 use mvengine::ui::geometry::SimpleRect;
 use mvutils::Savable;
 use mvutils::save::{Loader, Savable, Saver};
+use crate::mods::modsdk::MChunkPos;
 use crate::world::{ChunkPos, PixelUnit, CHUNK_SIZE};
 
 #[derive(Clone, Default)]
+#[repr(C)]
 pub struct TilePos {
     pub raw: (i32, i32),
     pub in_chunk_x: usize,
     pub in_chunk_z: usize,
     pub world_chunk_x: i32,
     pub world_chunk_z: i32,
-    pub chunk_pos: ChunkPos
+    pub chunk_pos: MChunkPos
 }
 
 impl TilePos {
@@ -24,7 +26,7 @@ impl TilePos {
             in_chunk_z: z as usize % CHUNK_SIZE as usize,
             world_chunk_x: cx,
             world_chunk_z: cz,
-            chunk_pos: (cx, cz),
+            chunk_pos: MChunkPos::new(cx, cz),
         }
     }
 
@@ -43,6 +45,10 @@ impl TilePos {
         let tile_z = (pixel_offset_y as f32 / tile_size as f32).floor() as i32;
 
         Self::new(tile_x, tile_z)
+    }
+    
+    pub(crate) fn fi_chunk_pos(&self) -> ChunkPos {
+        self.chunk_pos.to_normal()
     }
 
     pub fn up(&self, n: i32) -> Self {

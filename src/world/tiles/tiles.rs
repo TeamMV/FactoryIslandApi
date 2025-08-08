@@ -1,17 +1,18 @@
+use abi_stable::std_types::RVec;
 use crate::registry::tiles::TILE_REGISTRY;
-use crate::registry::Registerable;
-use crate::world::tiles::update::UpdateTile;
-use crate::world::tiles::ObjectSource;
+use crate::registry::{ObjectSource, Registerable};
 use crate::world::tiles::Orientation;
 use mvengine::utils::savers::SaveArc;
 use mvutils::save::{Loader, Savable, Saver};
 use mvutils::enum_val;
 use parking_lot::RwLock;
-use crate::world::tiles::implementations::power::{PowerConsumer, PowerGenerator, PowerTransformer};
+use crate::mods::modsdk::MOpt;
+use crate::world::tiles::update::{This, UpdateTileTrait};
 
 pub type TileType = SaveArc<RwLock<Tile>>;
 
 #[derive(Clone)]
+#[repr(C)]
 pub struct Tile {
     pub id: usize,
     pub info: TileInfo,
@@ -29,30 +30,13 @@ impl Savable for Tile {
         self.info.orientation.save(saver);
         match &self.info.inner {
             InnerTile::Static => 0u8.save(saver),
-            InnerTile::Update(b) => {
+            InnerTile::Update(b, this) => {
                 1u8.save(saver);
-                let vec = b.save_to_vec();
-                vec.save(saver);
-            }
-            InnerTile::PowerGenerator(b) => {
-                2u8.save(saver);
-                let vec = b.save_to_vec();
-                vec.save(saver);
-            }
-            InnerTile::PowerTransformer(b) => {
-                3u8.save(saver);
-                let vec = b.save_to_vec();
-                vec.save(saver);
-            }
-            InnerTile::PowerConsumer(b) => {
-                4u8.save(saver);
-                let vec = b.save_to_vec();
-                vec.save(saver);
             }
         }
-        if let Some(state) = &self.info.state {
+        if let Some((tile, state)) = &self.info.state {
             1u8.save(saver);
-            let vec = state.save_to_vec();
+            let vec = (state.save_to_vec)(*tile);
             vec.save(saver);
         } else {
             0u8.save(saver);
@@ -68,41 +52,18 @@ impl Savable for Tile {
             let inner = match variant {
                 0 => Ok(InnerTile::Static),
                 1 => {
-                    let vec = Vec::<u8>::load(loader)?;
                     let inner = template.info.inner.clone();
-                    let mut inner = enum_val!(InnerTile, inner, Update);
-                    inner.load_into_self(vec);
-                    Ok(InnerTile::Update(inner))
-                },
-                2 => {
-                    let vec = Vec::<u8>::load(loader)?;
-                    let inner = template.info.inner.clone();
-                    let mut inner = enum_val!(InnerTile, inner, PowerGenerator);
-                    inner.load_into_self(vec);
-                    Ok(InnerTile::PowerGenerator(inner))
-                },
-                3 => {
-                    let vec = Vec::<u8>::load(loader)?;
-                    let inner = template.info.inner.clone();
-                    let mut inner = enum_val!(InnerTile, inner, PowerTransformer);
-                    inner.load_into_self(vec);
-                    Ok(InnerTile::PowerTransformer(inner))
-                },
-                4 => {
-                    let vec = Vec::<u8>::load(loader)?;
-                    let inner = template.info.inner.clone();
-                    let mut inner = enum_val!(InnerTile, inner, PowerConsumer);
-                    inner.load_into_self(vec);
-                    Ok(InnerTile::PowerConsumer(inner))
+                    Ok(inner)
                 },
                 _ => Err("Illegal variant".to_string())
             }?;
             template.info.inner = inner;
             let has_state = u8::load(loader)?;
-            if has_state == 1 { 
-                let vec = Vec::<u8>::load(loader)?;
-                if let Some(state) = &mut template.info.state {
-                    state.load_into_self(vec);
+            if has_state == 1 {
+                let vec = RVec::<u8>::load(loader)?;
+                if let Some((tile, state)) = &mut template.info.state {
+                    let o = (state.load_into_self)(vec, *tile);
+                    o.to_rust().ok_or(format!("Loading of state failed for id: {id}"))?;
                 }
             }
             Ok(template)
@@ -112,36 +73,10 @@ impl Savable for Tile {
     }
 }
 
+#[derive(Clone)]
 pub enum InnerTile {
     Static,
-    Update(Box<dyn UpdateTile>),
-    PowerGenerator(Box<dyn PowerGenerator>),
-    PowerTransformer(Box<dyn PowerTransformer>),
-    PowerConsumer(Box<dyn PowerConsumer>),
-}
-
-struct Inv {
-    
-}
-
-impl Clone for InnerTile {
-    fn clone(&self) -> Self {
-        match self {
-            InnerTile::Static => Self::Static,
-            InnerTile::Update(b) => {
-                InnerTile::Update(b.box_clone())
-            }
-            InnerTile::PowerGenerator(b) => {
-                InnerTile::PowerGenerator(b.box_clone())
-            }
-            InnerTile::PowerTransformer(b) => {
-                InnerTile::PowerTransformer(b.box_clone())
-            }
-            InnerTile::PowerConsumer(b) => {
-                InnerTile::PowerConsumer(b.box_clone())
-            }
-        }
-    }
+    Update(UpdateTileTrait, This),
 }
 
 impl Registerable for Tile {
@@ -155,22 +90,49 @@ impl Registerable for Tile {
     }
 }
 
+#[derive(Clone)]
+#[repr(C)]
 pub struct TileInfo {
     pub orientation: Orientation,
     pub inner: InnerTile,
     pub source: ObjectSource,
     pub should_tick: bool,
-    pub state: Option<Box<dyn TileState>>
+    pub state: Option<(This, TileStateTrait)>,
+    pub oct: Option<(This, ObjControlTrait)>
 }
 
 impl Clone for TileInfo {
     fn clone(&self) -> Self {
+        let (inner, state, oct) = if let Some((tile, oct)) = &self.oct {
+            let new = (oct.create_copy)(*tile);
+            let inner = if let InnerTile::Update(t, _) = &self.inner {
+                InnerTile::Update(t.clone(), new)
+            } else {
+                self.inner.clone()
+            };
+            let state = self.state.clone().map(|x| (new, x.1));
+            let oct = self.oct.clone().map(|x| (new, x.1));
+            (inner, state, oct)
+        } else {
+            (self.inner.clone(), self.state.clone(), self.oct.clone())
+        };
         Self {
             orientation: self.orientation.clone(),
-            inner: self.inner.clone(),
+            inner,
             source: self.source.clone(),
             should_tick: self.should_tick,
-            state: self.state.as_ref().map(|b| b.box_clone()),
+            state,
+            oct: oct,
+        }
+    }
+}
+
+impl Drop for TileInfo {
+    fn drop(&mut self) {
+        if let Some((tile, oct)) = &self.oct {
+            unsafe {
+                (oct.free)(*tile)
+            }
         }
     }
 }
@@ -183,68 +145,86 @@ impl TileInfo {
             source: ObjectSource::Vanilla,
             should_tick: false,
             state: None,
+            oct: None,
         }
     }
     
-    pub fn vanilla_update(tile: impl UpdateTile + 'static) -> Self {
+    pub fn vanilla_update(tile: This, handler: UpdateTileTrait, oct: ObjControlTrait) -> Self {
         Self {
             orientation: Orientation::North,
-            inner: InnerTile::Update(Box::new(tile)),
+            inner: InnerTile::Update(handler, tile),
             source: ObjectSource::Vanilla,
             should_tick: false,
             state: None,
+            oct: Some((tile, oct)),
         }
     }
 
-    pub fn vanilla_update_ticking(tile: impl UpdateTile + 'static) -> Self {
+    pub fn vanilla_update_ticking(tile: This, handler: UpdateTileTrait, oct: ObjControlTrait) -> Self {
         Self {
             orientation: Orientation::North,
-            inner: InnerTile::Update(Box::new(tile)),
+            inner: InnerTile::Update(handler, tile),
             source: ObjectSource::Vanilla,
             should_tick: true,
             state: None,
+            oct: Some((tile, oct)),
         }
     }
 
-    pub fn vanilla_static_state(state: impl TileState + 'static) -> Self {
+    pub fn vanilla_static_state(tile: This, state: TileStateTrait, oct: ObjControlTrait) -> Self {
         Self {
             orientation: Orientation::North,
             inner: InnerTile::Static,
             source: ObjectSource::Vanilla,
             should_tick: false,
-            state: Some(Box::new(state)),
+            state: Some((tile, state)),
+            oct: Some((tile, oct)),
         }
     }
 
-    pub fn vanilla_update_state(tile: impl UpdateTile + 'static, state: impl TileState + 'static) -> Self {
+    pub fn vanilla_update_state(tile: This, handler: UpdateTileTrait, state: TileStateTrait, oct: ObjControlTrait) -> Self {
         Self {
             orientation: Orientation::North,
-            inner: InnerTile::Update(Box::new(tile)),
+            inner: InnerTile::Update(handler, tile),
             source: ObjectSource::Vanilla,
             should_tick: false,
-            state: Some(Box::new(state)),
+            state: Some((tile, state)),
+            oct: Some((tile, oct)),
         }
     }
 
-    pub fn vanilla_update_ticking_state(tile: impl UpdateTile + 'static, state: impl TileState + 'static) -> Self {
+    pub fn vanilla_update_ticking_state(tile: This, handler: UpdateTileTrait, state: TileStateTrait, oct: ObjControlTrait) -> Self {
         Self {
             orientation: Orientation::North,
-            inner: InnerTile::Update(Box::new(tile)),
+            inner: InnerTile::Update(handler, tile),
             source: ObjectSource::Vanilla,
             should_tick: true,
-            state: Some(Box::new(state)),
+            state: Some((tile, state)),
+            oct: Some((tile, oct)),
         }
     }
 }
 
-pub trait TileState: Send + Sync {
-    fn box_clone(&self) -> Box<dyn TileState>;
+#[derive(Clone)]
+#[repr(C)]
+pub struct TileStateTrait {
+    pub save_to_vec: fn(This) -> RVec<u8>,
+    pub load_into_self: fn(RVec<u8>, This) -> MOpt<()>,
+    pub client_state: fn(This) -> usize,
+    pub apply_client_state: fn(This, usize),
+}
 
-    fn save_to_vec(&self) -> Vec<u8>;
+pub trait TileState {
+    fn create_trait() -> TileStateTrait;
+}
 
-    fn load_into_self(&mut self, data: Vec<u8>);
-    
-    fn client_state(&self) -> usize;
-    
-    fn apply_client_state(&mut self, client_state: usize);
+#[derive(Clone)]
+#[repr(C)]
+pub struct ObjControlTrait {
+    pub create_copy: fn(This) -> This,
+    pub free: unsafe fn(This)
+}
+
+pub trait ObjControl {
+    fn create_trait() -> ObjControlTrait;
 }

@@ -6,7 +6,8 @@ pub struct CommandsCommand;
 impl CommandExecutor for CommandsCommand {
     fn on_command(&mut self, sender: CommandSender, cmd: String, args: Vec<String>, fi: &mut FactoryIsland) {
         sender.send_message("------".to_string());
-        for (cmd, _) in COMMAND_PROCESSOR.key_map.get() {
+        let this = COMMAND_PROCESSOR.inner.read();
+        for (cmd, _) in &this.key_map {
             sender.send_message(format!("'{}'", cmd));
         }
         sender.send_message("------".to_string());

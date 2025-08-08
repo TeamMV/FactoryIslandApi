@@ -1,4 +1,6 @@
 mod serialize;
+mod preprocessor;
+mod utils;
 
 use crate::serialize::ModJson;
 use std::fs::File;
@@ -9,6 +11,10 @@ use std::process::{Command, Stdio};
 use bytebuffer::ByteBuffer;
 use mvutils::bytebuffer::ByteBufferExtras;
 use mvutils::save::Savable;
+use quote::__private::TokenStream;
+use quote::ToTokens;
+use walkdir::WalkDir;
+use crate::preprocessor::{ModFileType, PreProcessor};
 
 pub trait MapErrorToString<T> {
     fn mets(self) -> Result<T, String>;
@@ -68,16 +74,18 @@ fn wrapper() -> Result<(), String> {
             // the generated resource file will be at "TMP/<modid>/compiled.r"
         }
 
+        let appdata = env::var("APPDATA").mets()?;
+        let appdata = PathBuf::from_str(&appdata).mets()?;
+        let appdata = appdata.join("FiModPacker");
+        let appdata = appdata.join("TMP");
+        let temp_dir = appdata.join(&mod_json.modid);
+
         let mut r_file: Vec<u8> = Vec::new();
         //search for the compiled resources
         if mod_json.specs.res {
             //append the compiled resources
-            let appdata = env::var("APPDATA").mets()?;
-            let appdata = PathBuf::from_str(&appdata).mets()?;
-            let appdata = appdata.join("FiModPacker");
-            let appdata = appdata.join("TMP");
-            let appdata = appdata.join(&mod_json.modid);
-            let r_file_path = appdata.join("compiled.r");
+
+            let r_file_path = temp_dir.join("compiled.r");
             if !fs::exists(&r_file_path).mets()? {
                 return Err("Cannot find the compiled resources! Please run without '-old_r' to have them regenerated!").mets();
             }
@@ -89,6 +97,7 @@ fn wrapper() -> Result<(), String> {
         let output = Command::new("cargo")
             .arg("build")
             .arg("--release")
+            .current_dir(&dir)
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .output()
@@ -98,6 +107,7 @@ fn wrapper() -> Result<(), String> {
             return Err(err);
         }
         println!("The mod compilation was successful!");
+
         //retrieve the dll file
         let dll_path = dir.join(&format!("target/release/{}.dll", mod_json.modid));
 
@@ -131,7 +141,8 @@ fn compile_resources(modid: &str, dir: &PathBuf) -> Result<(), String> {
     let main_rs_contents = main_rs_contents.replace("{{mod_tmp_dir}}", &mod_tmp_dir.to_unix_string());
     println!("Generating cargo project...");
     create_rust_project(&cargo_dir, &main_rs_contents)?;
-    copy_dir_all(&resources_dir_file_path, &appdata.join("resources")).mets()?;
+    let empty_filter: &[&str] = &[];
+    copy_dir_all(&resources_dir_file_path, &appdata.join("resources"), empty_filter).mets()?;
     let appdata = appdata.join("src/res.rs");
     fs::copy(&r_file_path, &appdata).mets()?;
     println!("Running compilation... This might take a bit!");
@@ -183,15 +194,27 @@ fn run_rust_project(location: &PathBuf) -> Result<(), String> {
     Ok(())
 }
 
-fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<()> {
+fn copy_dir_all(
+    src: impl AsRef<Path>,
+    dst: impl AsRef<Path>,
+    filter: &[impl AsRef<Path>],
+) -> io::Result<()> {
     fs::create_dir_all(&dst)?;
-    for entry in fs::read_dir(src)? {
+    for entry in fs::read_dir(&src)? {
         let entry = entry?;
-        let ty = entry.file_type()?;
-        if ty.is_dir() {
-            copy_dir_all(entry.path(), dst.as_ref().join(entry.file_name()))?;
+        let entry_path = entry.path();
+        let rel_path = entry_path.strip_prefix(src.as_ref()).unwrap(); // relative to src
+
+        // Check if rel_path matches any of the filters
+        if filter.iter().any(|f| f.as_ref() == rel_path) {
+            continue;
+        }
+
+        let dest_path = dst.as_ref().join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_all(entry_path, dest_path, filter)?;
         } else {
-            fs::copy(entry.path(), dst.as_ref().join(entry.file_name()))?;
+            fs::copy(entry_path, dest_path)?;
         }
     }
     Ok(())

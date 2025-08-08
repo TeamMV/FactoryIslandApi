@@ -1,7 +1,6 @@
+#![feature(map_try_insert)]
+
 use crate::command::{CommandProcessor, CommandSender, COMMAND_PROCESSOR};
-use crate::event::common::{ServerCommandEvent, ServerTickEvent};
-use crate::event::player::PlayerMoveEvent;
-use crate::event::{Event, GameStartEvent};
 use crate::mods::{ModLoader, DEFAULT_MOD_DIR};
 use crate::player::{Player, PlayerType};
 use crate::registry::terrain::TerrainTiles;
@@ -10,7 +9,6 @@ use crate::server::packets::common::{ClientDataPacket, PlayerData, ServerStatePa
 use crate::server::packets::player::{OtherPlayerChatPacket, OtherPlayerJoinPacket, OtherPlayerLeavePacket, OtherPlayerMovePacket, PlayerMovePacket};
 use crate::server::{ClientBoundPacket, ServerBoundPacket};
 use crate::world::{TileSetReason, World, WorldType};
-use event::player::{PlayerJoinEvent, PlayerLeaveEvent};
 use hashbrown::HashSet;
 use log::{debug, error, info};
 use mvengine::event::EventBus;
@@ -18,7 +16,7 @@ use mvengine::net::server::{ClientEndpoint, ClientId, ServerHandler};
 use mvengine::net::DisconnectReason;
 use mvengine::utils::args::ParsedArgs;
 use mvengine::utils::savers::save_to_vec;
-use mvutils::enum_val;
+use mvutils::{enum_val, lazy};
 use mvutils::hashers::U64IdentityHasher;
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -29,15 +27,14 @@ use std::{env, thread};
 use std::sync::atomic::{AtomicBool, Ordering};
 use mvutils::clock::Clock;
 use mvutils::unsafe_utils::Unsafe;
-use parking_lot::lock_api::RwLock;
+use parking_lot::RwLock;
+use crate::mods::modsdk::events::Event;
 use crate::registry::tiles::TILE_REGISTRY;
 use crate::server::packets::world::TileSetPacket;
 use crate::world::chunk::ToClientObject;
-use crate::world::tiles::implementations::power::lamp::LampState;
 use crate::world::tiles::Orientation;
 use crate::world::tiles::tiles::TileType;
 
-pub mod event;
 pub mod world;
 pub mod settings;
 pub mod player;
@@ -46,11 +43,12 @@ pub mod mods;
 pub mod command;
 pub mod registry;
 
+lazy! {
+    pub(crate) static PLAYERS: RwLock<HashMap<ClientId, PlayerType, U64IdentityHasher>> = RwLock::new(HashMap::with_hasher(U64IdentityHasher::default()));
+}
+
 pub struct FactoryIsland {
     pub(crate) world: WorldType,
-    pub(crate) players: HashMap<ClientId, PlayerType, U64IdentityHasher>,
-    pub(crate) event_bus: EventBus<Event>,
-    pub(crate) mod_loader: ModLoader,
     pub(crate) render_distance: i32,
     
     pub objects: GameObjects,
@@ -58,26 +56,32 @@ pub struct FactoryIsland {
 
 impl FactoryIsland {
     pub fn tick(&mut self) {
-        let this = unsafe { Unsafe::cast_lifetime(self) };
         let mut loaded_by_player = HashSet::new();
-        for player in self.players.values() {
+        let mut player_lock = PLAYERS.write();
+        for player in player_lock.values() {
             let mut lock = player.lock();
             lock.tick();
             for pos in &lock.loaded_chunks {
                 loaded_by_player.insert(*pos);
             }
         }
+        drop(player_lock);
         let mut world = self.world.lock();
         world.check_unload(loaded_by_player);
-        world.tick(&mut self.event_bus, this);
+        world.tick(self);
         
         drop(world);
-
-        self.event_bus.dispatch(&mut Event::ServerTickEvent(ServerTickEvent));
+        ModLoader::dispatch_event(Event::ServerTickEvent);
     }
 
     pub fn on_command(&mut self, command: String, player: Option<PlayerData>) {
         COMMAND_PROCESSOR.process(player.map_or(CommandSender::Console, |d| CommandSender::Player(d)), command, self);
+    }
+
+    pub fn stop(&mut self) {
+        self.mod_loader.dispatch_event(&mut Event::GameEndEvent(GameEndEvent));
+        self.mod_loader.unload();
+        exit(0);
     }
 }
 
@@ -85,8 +89,6 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
     fn on_server_start(port: u16) -> Self {
         let args = ParsedArgs::parse(env::args());
         let mod_dir = args.try_get_as("-mods").unwrap_or(DEFAULT_MOD_DIR.clone());
-
-        let mut event_bus = EventBus::new();
         
         let terrain_tiles = registry::terrain::register_all();
         let tiles = registry::tiles::register_all();
@@ -98,16 +100,15 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
         };
         
         let mut mod_loader = ModLoader::new();
-        mod_loader.load(&mod_dir, &mut event_bus, objects.clone());
+        mod_loader.load(&mod_dir, objects.clone());
         
-        event_bus.dispatch(&mut Event::GameStartEvent(GameStartEvent));
+        mod_loader.dispatch_event(&mut Event::GameStartEvent(GameStartEvent));
 
-        let world = World::get_main(objects.clone(), &mut event_bus);
+        let world = World::get_main(objects.clone(), &mut mod_loader);
 
         FactoryIsland {
             world,
             players: HashMap::with_hasher(U64IdentityHasher::default()),
-            event_bus,
             mod_loader,
             render_distance: 1,
             
@@ -145,7 +146,7 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
         let mut event = Event::PlayerJoinEvent(PlayerJoinEvent {
             player: player.clone(),
         });
-        self.event_bus.dispatch(&mut event);
+        self.mod_loader.dispatch_event(&mut event);
         self.players.insert(id, player);
     }
 
@@ -155,7 +156,7 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
                 player: player.clone(),
                 reason,
             });
-            self.event_bus.dispatch(&mut event);
+            self.mod_loader.dispatch_event(&mut event);
 
             let mut lock = player.lock();
             lock.on_disconnect();
@@ -180,7 +181,7 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
                 debug!("Client data packet arrived");
                 if let Some(player) = self.players.get(&client.id()) {
                     let mut lock = player.lock();
-                    lock.apply_data(packet.clone(), &mut self.event_bus);
+                    lock.apply_data(packet.clone(), &mut self.mod_loader);
 
                     let id = client.id();
                     debug!("starting client join message");
@@ -203,12 +204,12 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
                         pos: packet.pos,
                         player: player.clone(),
                     });
-                    self.event_bus.dispatch(&mut event);
+                    self.mod_loader.dispatch_event(&mut event);
 
                     let event = enum_val!(Event, event, PlayerMoveEvent);
                     if !event.has_been_cancelled {
                         let mut lock = player.lock();
-                        lock.move_to(event.pos, &mut self.event_bus);
+                        lock.move_to(event.pos, &mut self.mod_loader);
                         drop(lock);
                     } else {
                         client.send(ClientBoundPacket::PlayerMove(PlayerMovePacket {
@@ -292,7 +293,7 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
                     let mut lock = player.lock();
                     lock.loaded_chunks.clear();
                     let rdst = lock.data.render_distance;
-                    lock.after_move(rdst, &mut self.event_bus);
+                    lock.after_move(rdst, &mut self.mod_loader);
                 }
             }
         }

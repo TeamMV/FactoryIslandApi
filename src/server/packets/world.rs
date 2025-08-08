@@ -12,6 +12,14 @@ pub struct TileSetPacket {
     pub reason: TileSetReason
 }
 
+#[derive(Savable, Clone)]
+pub struct TerrainSetPacket {
+    pub pos: TilePos,
+    pub tile: ToClientObject,
+    pub reason: TileSetReason
+}
+
+
 #[derive(Clone, Savable)]
 pub struct TileSetFromClientPacket {
     pub pos: TilePos,

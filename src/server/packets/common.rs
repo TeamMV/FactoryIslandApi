@@ -1,11 +1,12 @@
-use crate::world::tiles::ObjectSource;
 use mvengine::net::server::ClientId;
 use mvutils::Savable;
+use crate::registry::ObjectSource;
 
 #[derive(Clone, Debug, Savable)]
 pub struct ClientDataPacket {
     pub name: String,
     pub render_distance: i32,
+    pub client_id: ClientId
 }
 
 #[derive(Clone, Savable)]

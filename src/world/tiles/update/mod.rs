@@ -1,40 +1,36 @@
-use crate::event::Event;
 use crate::world::tiles::pos::TilePos;
 use crate::world::World;
-use mvengine::event::EventBus;
 use mvutils::save::Savable;
-use crate::FactoryIsland;
 
-pub trait UpdateTile: Send + Sync {
-    fn send_update(&mut self, at: TilePos, world: &mut World, event_bus: &mut EventBus<Event>, fi: &FactoryIsland) {
-        if self.handler().on_update(at.clone(), world, event_bus) {
+pub type This = *mut ();
+
+#[derive(Clone)]
+#[repr(C)]
+pub struct UpdateTileTrait {
+    pub get_handler: fn(This) -> *mut UpdateHandler,
+    pub on_update_receive: fn(This),
+}
+
+impl UpdateTileTrait {
+    pub(crate) fn send_update(&self, this: This, at: TilePos, world: &mut World) {
+        if (self.get_handler)(this).on_update(at.clone(), world) {
             let has_changed = self.on_update_receive();
             if has_changed {
-                world.sync_tilestate(at.clone(), event_bus, fi);
+                world.sync_tilestate(at.clone());
                 for pos in at.direct_neighbours() {
-                    world.send_update(pos, event_bus, fi);
+                    world.send_update(pos);
                 }
             }
         }
     }
-    
-    fn end_tick(&mut self) {
-        self.handler().end_tick(); 
-    }
 
-    fn handler(&mut self) -> &mut UpdateHandler;
-    
-    ///Should return true when the tile has changed and thus should update its neighbours and broadcast its state to the clients
-    fn on_update_receive(&mut self) -> bool;
-    
-    fn box_clone(&self) -> Box<dyn UpdateTile>;
-    
-    fn save_to_vec(&self) -> Vec<u8>;
-    
-    fn load_into_self(&mut self, data: Vec<u8>);
+    pub(crate) fn end_tick(&self, this: This) {
+        (self.get_handler)(this).end_tick()
+    }
 }
 
 #[derive(Clone)]
+#[repr(C)]
 pub struct UpdateHandler {
     received: bool
 }
@@ -46,7 +42,7 @@ impl UpdateHandler {
         }
     }
     
-    pub fn on_update(&mut self, at: TilePos, world: &mut World, event_bus: &mut EventBus<Event>) -> bool {
+    pub fn on_update(&mut self, at: TilePos, world: &mut World) -> bool {
         if !self.received {
             self.received = true;
             return true;
@@ -63,4 +59,8 @@ impl Default for UpdateHandler {
     fn default() -> Self {
         Self::new()
     }
+}
+
+pub trait UpdateTile {
+    fn create_trait() -> UpdateTileTrait;
 }

@@ -1,7 +1,4 @@
-use std::process::exit;
-use log::info;
 use crate::command::{CommandExecutor, CommandSender};
-use crate::event::{Event, GameEndEvent};
 use crate::FactoryIsland;
 
 pub struct StopCommand;
@@ -14,7 +11,6 @@ impl CommandExecutor for StopCommand {
         drop(world);
         sender.send_message("World saved!".to_string());
         sender.send_message("Exiting...".to_string());
-        fi.event_bus.dispatch(&mut Event::GameEndEvent(GameEndEvent));
-        exit(0);
+        fi.stop();
     }
 }

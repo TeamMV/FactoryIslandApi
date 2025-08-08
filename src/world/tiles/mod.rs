@@ -9,8 +9,10 @@ pub mod tiles;
 pub mod update;
 pub mod implementations;
 pub mod resources;
+pub mod utils;
 
 #[derive(Savable, Clone, Copy, Debug)]
+#[repr(C)]
 pub enum Orientation {
     North,
     South,
@@ -26,21 +28,5 @@ impl Orientation {
             Orientation::South => [uv[2], uv[3], uv[0], uv[1]],
             Orientation::West => [uv[1], uv[2], uv[3], uv[0]],
         }
-    }
-}
-
-#[derive(Clone, Savable)]
-pub enum ObjectSource {
-    Vanilla,
-    Mod(String, ClientTileRes)
-}
-
-impl ObjectSource {
-    pub fn mod_simple(id: &str) -> Self {
-        Self::Mod(id.to_string(), ClientTileRes::empty())
-    }
-
-    pub fn mod_res(id: &str, res: ClientTileRes) -> Self {
-        Self::Mod(id.to_string(), res)
     }
 }

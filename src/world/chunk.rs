@@ -1,21 +1,24 @@
-use crate::event::world::{BeforeChunkGenerateEvent, BeforeChunkGenerateTerrainEvent};
-use crate::event::Event;
 use crate::registry::terrain::TERRAIN_REGISTRY;
-use crate::registry::GameObjects;
+use crate::registry::{GameObjects, ObjectSource};
 use crate::world::generate::ChunkGenerator;
 use crate::world::tiles::pos::TilePos;
 use crate::world::tiles::tiles::TileType;
-use crate::world::tiles::{ObjectSource, Orientation};
-use crate::world::{ChunkPos, CHUNK_SIZE};
+use crate::world::tiles::{TileSource, Orientation};
+use crate::world::{ChunkPos, ChunkType, CHUNK_SIZE};
 use mvengine::event::EventBus;
 use mvutils::save::custom::ignore_save;
 use mvutils::save::{Loader, Savable};
 use mvutils::{enum_val, Savable};
 use std::collections::HashMap;
+use abi_stable::std_types::{RHashMap, Tuple2};
+use crate::mods::ModLoader;
+use crate::mods::modsdk::events::Event;
+use crate::mods::modsdk::events::world::BeforeChunkGenerateEvent;
 
 pub const CHUNK_TILES: usize = CHUNK_SIZE as usize * CHUNK_SIZE as usize;
 
 #[derive(Clone, Savable)]
+#[repr(C)]
 pub struct Chunk {
     pub seed: u32,
     pub position: ChunkPos,
@@ -112,7 +115,7 @@ impl Chunk {
                     ToClientObject {
                         id: 0,
                         orientation: o,
-                        source: ObjectSource::Vanilla,
+                        source: TileSource::Vanilla,
                         state: 0
                     }
                 }
@@ -139,48 +142,47 @@ impl Chunk {
         }
     }
     
-    pub fn generate(mut self, generator: &impl ChunkGenerator, event_bus: &mut EventBus<Event>, objects: &GameObjects) -> Self {
+    pub fn generate(this: &ChunkType, generator: &impl ChunkGenerator, objects: &GameObjects) {
+        let mut lock = this.lock();
+        let pos = lock.position;
         let event = BeforeChunkGenerateEvent {
             has_been_cancelled: false,
-            pos: self.position,
-            chunk: self,
+            pos,
+            chunk: &mut *lock,
         };
-        let mut event = Event::BeforeChunkGenerateEvent(event);
-        event_bus.dispatch(&mut event);
+        let event = ModLoader::dispatch_event(Event::BeforeChunkGenerateEvent(event));
 
         let mut event = enum_val!(Event, event, BeforeChunkGenerateEvent);
         if !event.has_been_cancelled {
             generator.generate(&mut event.chunk, objects);
         }
-        
-        event.chunk
     }
 
-    pub fn generate_terrain(mut self, generator: &impl ChunkGenerator, event_bus: &mut EventBus<Event>, objects: &GameObjects) -> Self {
-        let event = BeforeChunkGenerateTerrainEvent {
+    pub fn generate_terrain(this: &ChunkType, generator: &impl ChunkGenerator, objects: &GameObjects) {
+        let mut lock = this.lock();
+        let pos = lock.position;
+        let event = BeforeChunkGenerateEvent {
             has_been_cancelled: false,
-            pos: self.position,
-            chunk: self,
+            pos,
+            chunk: &mut *lock,
         };
-        let mut event = Event::BeforeChunkGenerateTerrainEvent(event);
-        event_bus.dispatch(&mut event);
+        let event = ModLoader::dispatch_event(Event::BeforeChunkGenerateEvent(event));
 
-        let mut event = enum_val!(Event, event, BeforeChunkGenerateTerrainEvent);
+        let mut event = enum_val!(Event, event, BeforeChunkGenerateEvent);
         if !event.has_been_cancelled {
             generator.generate_terrain(&mut event.chunk, objects);
         }
-
-        event.chunk
     }
 }
 
 #[derive(Clone, Savable)]
+#[repr(C)]
 pub struct TerrainLayer {
     #[custom(save = ignore_save, load = empty_terrain)]
     pub terrain: Box<[u16; CHUNK_TILES]>,
     #[custom(save = ignore_save, load = empty_orientation)]
     pub orientation: Box<[Orientation; CHUNK_TILES]>,
-    pub mods: HashMap<u16, u16>,
+    pub mods: RHashMap<u16, u16>,
 }
 
 fn empty_terrain(_: &mut impl Loader) -> Result<Box<[u16; CHUNK_TILES]>, String> {
@@ -201,7 +203,7 @@ impl TerrainLayer {
         Self {
             terrain: Box::new(terrain_array),
             orientation: Box::new(orientation_array),
-            mods: HashMap::new(),
+            mods: RHashMap::new(),
         }
     }
 
@@ -236,7 +238,7 @@ impl TerrainLayer {
     }
 
     pub fn apply_modifications(&mut self) {
-        for (pos, material) in &self.mods {
+        for Tuple2(pos, material) in self.mods.iter() {
             let (x, z) = Self::unmap(*pos);
             self.terrain[x as usize + z as usize * CHUNK_SIZE as usize] = material.clone();
         }
