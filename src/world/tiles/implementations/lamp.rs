@@ -1,6 +1,7 @@
 use std::alloc::Layout;
 use std::{alloc, ptr};
 use abi_stable::std_types::RVec;
+use log::debug;
 use mvutils::utils::TetrahedronOp;
 use crate::{p, leak, rvec_load, rvec_save, ptr_invoke_clone};
 use crate::mods::modsdk::MOpt;
@@ -55,9 +56,10 @@ pub fn get_handler(this: This) -> *mut UpdateHandler {
     tile.handler
 }
 
-pub fn on_update_receive(this: This) {
-
+pub fn on_update_receive(this: This) -> bool {
+    false
 }
+
 pub fn save_to_vec(this: This) -> RVec<u8> {
     let tile = p!(this as LampTile);
     rvec_save!(tile => on,)
@@ -94,10 +96,17 @@ pub fn create_copy(this: This) -> This {
 
 pub unsafe fn free(this: This) {
     let tile = p!(this as LampTile);
-    let handler_lay = Layout::for_value(&*tile.handler);
-    ptr::drop_in_place(tile.handler);
-    alloc::dealloc(tile.handler as *mut u8, handler_lay);
     let tile_lay = Layout::for_value(tile);
     ptr::drop_in_place(this as *mut LampTile);
     alloc::dealloc(this as *mut u8, tile_lay);
+}
+
+impl Drop for LampTile {
+    fn drop(&mut self) {
+        unsafe {
+            let handler_lay = Layout::for_value(&*self.handler);
+            ptr::drop_in_place(self.handler);
+            alloc::dealloc(self.handler as *mut u8, handler_lay);
+        }
+    }
 }

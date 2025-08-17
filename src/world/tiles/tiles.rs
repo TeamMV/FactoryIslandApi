@@ -1,4 +1,5 @@
 use abi_stable::std_types::RVec;
+use log::debug;
 use crate::registry::tiles::TILE_REGISTRY;
 use crate::registry::{ObjectSource, Registerable};
 use crate::world::tiles::Orientation;
@@ -91,7 +92,6 @@ impl Registerable for Tile {
     }
 }
 
-#[derive(Clone)]
 #[repr(C)]
 pub struct TileInfo {
     pub orientation: Orientation,
@@ -123,20 +123,25 @@ impl Clone for TileInfo {
             source: self.source.clone(),
             should_tick: self.should_tick,
             state,
-            oct: oct,
+            oct,
         }
     }
 }
 
 impl Drop for TileInfo {
     fn drop(&mut self) {
+        debug!("TileInfo drop1");
         if let Some((tile, oct)) = &self.oct {
             unsafe {
                 (oct.free)(*tile)
             }
         }
+        debug!("TileInfo drop2");
     }
 }
+
+unsafe impl Send for TileInfo {}
+unsafe impl Sync for TileInfo {}
 
 impl TileInfo {
     pub fn vanilla_static() -> Self {

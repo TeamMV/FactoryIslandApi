@@ -1,5 +1,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use abi_stable::std_types::RString;
+use mvutils::Savable;
 use mvutils::save::{Loader, Savable, Saver};
 use parking_lot::RwLock;
 use crate::registry::terrain::TerrainTiles;
@@ -59,7 +60,7 @@ pub struct GameObjects {
     pub tiles: Tiles
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Savable)]
 #[repr(C)]
 pub enum ObjectSource {
     Vanilla,

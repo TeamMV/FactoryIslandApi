@@ -1,4 +1,5 @@
 #![feature(map_try_insert)]
+#![feature(try_trait_v2)]
 
 use crate::command::{CommandProcessor, CommandSender, COMMAND_PROCESSOR};
 use crate::mods::{ModLoader, DEFAULT_MOD_DIR};
@@ -25,10 +26,13 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{env, thread};
 use std::sync::atomic::{AtomicBool, Ordering};
+use abi_stable::traits::IntoReprC;
 use mvutils::clock::Clock;
 use mvutils::unsafe_utils::Unsafe;
 use parking_lot::RwLock;
 use crate::mods::modsdk::events::Event;
+use crate::mods::modsdk::events::player::{PlayerJoinEvent, PlayerLeaveEvent, PlayerMoveEvent};
+use crate::mods::modsdk::{MPlayerData, MTileUnit};
 use crate::registry::tiles::TILE_REGISTRY;
 use crate::server::packets::world::TileSetPacket;
 use crate::world::chunk::ToClientObject;
@@ -68,7 +72,7 @@ impl FactoryIsland {
         drop(player_lock);
         let mut world = self.world.lock();
         world.check_unload(loaded_by_player);
-        world.tick(self);
+        world.tick();
         
         drop(world);
         ModLoader::dispatch_event(Event::ServerTickEvent);
@@ -79,8 +83,8 @@ impl FactoryIsland {
     }
 
     pub fn stop(&mut self) {
-        self.mod_loader.dispatch_event(&mut Event::GameEndEvent(GameEndEvent));
-        self.mod_loader.unload();
+        ModLoader::dispatch_event(Event::GameEndEvent);
+        ModLoader::unload();
         exit(0);
     }
 }
@@ -98,18 +102,14 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
             terrain: terrain_tiles,
             tiles,
         };
-        
-        let mut mod_loader = ModLoader::new();
-        mod_loader.load(&mod_dir, objects.clone());
-        
-        mod_loader.dispatch_event(&mut Event::GameStartEvent(GameStartEvent));
 
-        let world = World::get_main(objects.clone(), &mut mod_loader);
+        ModLoader::load(&mod_dir, objects.clone());
+        ModLoader::dispatch_event(Event::GameStartEvent);
+
+        let world = World::get_main(objects.clone());
 
         FactoryIsland {
             world,
-            players: HashMap::with_hasher(U64IdentityHasher::default()),
-            mod_loader,
             render_distance: 1,
             
             objects,
@@ -118,7 +118,8 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
 
     fn on_client_connect(&mut self, client: Arc<ClientEndpoint>) {
         let mut player_data = Vec::new();
-        for (client_id, player) in &self.players {
+        let mut players = PLAYERS.write();
+        for (client_id, player) in players.iter() {
             let lock = player.lock();
             let data = PlayerData {
                 client_id: *client_id,
@@ -131,40 +132,46 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
             if let Some(object) = TILE_REGISTRY.create_object(id) {
                 tiles.push(TileKind {
                     id,
-                    source: object.info.source,
+                    source: object.info.source.clone(),
                 });
             }
         }
         client.send(ClientBoundPacket::ServerState(ServerStatePacket {
             players: player_data,
-            mods: self.mod_loader.res_mod_ids(),
+            mods: ModLoader::res_mod_ids(),
             tiles,
+            client_id: client.id(),
         }));
-
         let id = client.id();
         let player = Player::new(client, self.world.clone());
-        let mut event = Event::PlayerJoinEvent(PlayerJoinEvent {
-            player: player.clone(),
-        });
-        self.mod_loader.dispatch_event(&mut event);
-        self.players.insert(id, player);
+        ModLoader::dispatch_event(Event::PlayerJoinEvent(PlayerJoinEvent {
+            player: id,
+        }));
+        players.insert(id, player);
     }
 
     fn on_client_disconnect(&mut self, client: Arc<ClientEndpoint>, reason: DisconnectReason) {
-        if let Some(player) = self.players.get(&client.id()) {
-            let mut event = Event::PlayerLeaveEvent(PlayerLeaveEvent {
-                player: player.clone(),
-                reason,
+        let mut players = PLAYERS.write();
+        if let Some(player) = players.get(&client.id()).cloned() {
+            let lock = player.lock();
+            let name = lock.data.name.clone().into_c();
+            let pos = MTileUnit::from_normal(lock.position);
+            let event = Event::PlayerLeaveEvent(PlayerLeaveEvent {
+                player: client.id(),
+                data: MPlayerData {
+                    name,
+                    pos,
+                },
             });
-            self.mod_loader.dispatch_event(&mut event);
+            ModLoader::dispatch_event(event);
 
             let mut lock = player.lock();
             lock.on_disconnect();
             drop(lock);
-            self.players.remove(&client.id());
+            players.remove(&client.id());
 
             let id = client.id();
-            for (_, other_player) in self.players.iter().filter(|(p, _)| **p != id) {
+            for (_, other_player) in players.iter().filter(|(p, _)| **p != id) {
                 let lock = other_player.lock();
                 if let Some(endpoint) = lock.client_endpoint() {
                     endpoint.send(ClientBoundPacket::OtherPlayerLeave(OtherPlayerLeavePacket {
@@ -176,16 +183,17 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
     }
 
     fn on_packet(&mut self, client: Arc<ClientEndpoint>, packet: ServerBoundPacket) {
+        let mut players = PLAYERS.write();
         match packet {
             ServerBoundPacket::ClientData(packet) => {
                 debug!("Client data packet arrived");
-                if let Some(player) = self.players.get(&client.id()) {
+                if let Some(player) = players.get(&client.id()) {
                     let mut lock = player.lock();
-                    lock.apply_data(packet.clone(), &mut self.mod_loader);
+                    lock.apply_data(packet.clone());
 
                     let id = client.id();
                     debug!("starting client join message");
-                    for (_, other_player) in self.players.iter().filter(|(p, _)| **p != id) {
+                    for (_, other_player) in players.iter().filter(|(p, _)| **p != id) {
                         let lock = other_player.lock();
                         if let Some(endpoint) = lock.client_endpoint() {
                             endpoint.send(ClientBoundPacket::OtherPlayerJoin(OtherPlayerJoinPacket {
@@ -198,30 +206,33 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
                 }
             }
             ServerBoundPacket::PlayerMove(packet) => {
-                if let Some(player) = self.players.get(&client.id()) {
+                if let Some(player) = players.get(&client.id()) {
+                    let pos = player.lock().position;
+                    let position = MTileUnit::from_normal(pos);
                     let mut event = Event::PlayerMoveEvent(PlayerMoveEvent {
                         has_been_cancelled: false,
-                        pos: packet.pos,
-                        player: player.clone(),
+                        player: client.id(),
+                        position,
                     });
-                    self.mod_loader.dispatch_event(&mut event);
+                    let event = ModLoader::dispatch_event(event);
 
                     let event = enum_val!(Event, event, PlayerMoveEvent);
+                    let pos = event.position.to_normal();
                     if !event.has_been_cancelled {
                         let mut lock = player.lock();
-                        lock.move_to(event.pos, &mut self.mod_loader);
+                        lock.move_to(pos);
                         drop(lock);
                     } else {
                         client.send(ClientBoundPacket::PlayerMove(PlayerMovePacket {
-                            pos: event.pos,
+                            pos,
                         }));
                     }
-                    for (_, other_player) in self.players.iter().filter(|(p, _)| **p != client.id()) {
+                    for (_, other_player) in players.iter().filter(|(p, _)| **p != client.id()) {
                         let lock = other_player.lock();
                         if let Some(endpoint) = lock.client_endpoint() {
                             endpoint.send(ClientBoundPacket::OtherPlayerMove(OtherPlayerMovePacket {
                                 client_id: client.id(),
-                                pos: event.pos,
+                                pos,
                             }));
                         }
                     }
@@ -229,12 +240,12 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
             }
             ServerBoundPacket::TileSet(packet) => {
                 if let Some(mut tile) = TILE_REGISTRY.create_object(packet.tile_id) {
-                    if let Some(state) = &mut tile.info.state {
-                        state.apply_client_state(packet.tile_state);
+                    if let Some((state, t)) = &mut tile.info.state {
+                        (t.apply_client_state)(*state, packet.tile_state);
                     }
                     let cloned = self.world.clone();
                     let mut world_lock = cloned.lock();
-                    let player = self.players.get(&client.id()).cloned();
+                    let player = players.get(&client.id()).cloned();
                     if let Some(player) = player {
                         let reason = TileSetReason::Player(player.lock().data.clone());
                         
@@ -245,10 +256,10 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
                             state: packet.tile_state,
                         };
 
-                        world_lock.set_tile_at(packet.pos.clone(), tile.to_type(), reason.clone(), self);
+                        world_lock.set_tile_at(packet.pos.clone(), tile.to_type(), reason.clone());
                         
                         // Dont filter out the current id as the tile only gets set on the client if the server says its okay. just to avoid desync
-                        for (_, other_player) in self.players.iter() {
+                        for (_, other_player) in players.iter() {
                             let lock = other_player.lock();
                             if let Some(endpoint) = lock.client_endpoint() {
                                 endpoint.send(ClientBoundPacket::TileSet(TileSetPacket {
@@ -264,7 +275,7 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
                 };
             },
             ServerBoundPacket::PlayerChat(packet) => {
-                if let Some(player) = self.players.get(&client.id()) {
+                if let Some(player) = players.get(&client.id()) {
                     let lock = player.lock();
                     let client_data = lock.data.clone();
                     drop(lock);
@@ -276,7 +287,7 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
                         let command = packet.message[1..].trim().to_string();
                         self.on_command(command, Some(data));
                     } else {
-                        for (_, other_player) in self.players.iter() {
+                        for (_, other_player) in players.iter() {
                             let lock = other_player.lock();
                             if let Some(endpoint) = lock.client_endpoint() {
                                 endpoint.send(ClientBoundPacket::OtherPlayerChat(OtherPlayerChatPacket {
@@ -289,11 +300,11 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
                 }
             }
             ServerBoundPacket::RequestReload => {
-                if let Some(player) = self.players.get(&client.id()) {
+                if let Some(player) = players.get(&client.id()) {
                     let mut lock = player.lock();
                     lock.loaded_chunks.clear();
                     let rdst = lock.data.render_distance;
-                    lock.after_move(rdst, &mut self.mod_loader);
+                    lock.after_move(rdst);
                 }
             }
         }

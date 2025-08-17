@@ -1,3 +1,4 @@
+use abi_stable::std_types::RVec;
 use crate::mods::modsdk::MOpt;
 
 #[macro_export]
@@ -5,6 +6,8 @@ macro_rules! rvec_save {
     ($this: ident => $($field:ident,)*) => {
         {
             use mvutils::bytebuffer::ByteBufferExtras;
+            use mvutils::save::Savable;
+            use abi_stable::traits::IntoReprC;
             let mut buffer = bytebuffer::ByteBuffer::new_le();
             $(
                 $this.$field.save(&mut buffer);
@@ -23,11 +26,14 @@ macro_rules! rvec_load {
         }
     ) => {{
         use mvutils::bytebuffer::ByteBufferExtras;
-        let mut buffer = bytebuffer::ByteBuffer::from_vec_c($vec);
+        use mvutils::save::Savable;
+        use crate::mods::modsdk::ToMOpt;
+        let vec = RVec::to_vec(&$vec);
+        let mut buffer = bytebuffer::ByteBuffer::from_vec_le(vec);
 
         $(
             $this.$load_field =
-                $t::load(&mut buffer)
+                <$t>::load(&mut buffer)
                     .ok()
                     .to_m()?;
         )*
@@ -45,7 +51,7 @@ macro_rules! leak {
 macro_rules! p {
     ($r:ident) => {
         unsafe { $r as *mut _ as *mut () }
-    }
+    };
     ($ptr:ident as $to:ty) => {
         unsafe { ($ptr as *mut $to).as_mut().expect("Bro this is illegal check ur cast") }
     };

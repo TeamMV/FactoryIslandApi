@@ -17,6 +17,7 @@ pub struct PlayerLeaveEvent {
 #[derive(Clone, Debug)]
 #[repr(C)]
 pub struct PlayerMoveEvent {
+    pub has_been_cancelled: bool,
     pub player: MPlayer,
     pub position: MTileUnit
 }

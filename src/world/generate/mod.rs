@@ -9,7 +9,6 @@ use crate::world::CHUNK_SIZE;
 use mvutils::utils::{Map, MapTo};
 use parking_lot::lock_api::RwLock;
 use crate::registry::tiles::TILE_REGISTRY;
-use crate::world::tiles::implementations::power::lamp::LampState;
 use crate::world::tiles::tiles::TileType;
 
 pub trait ChunkGenerator {
@@ -51,16 +50,8 @@ impl GeneratePipeline {
 impl ChunkGenerator for GeneratePipeline {
     fn generate(&self, chunk: &mut Chunk, game_objects: &GameObjects) {
         if chunk.position == (0, 0) {
-            let tile = TILE_REGISTRY.create_object(game_objects.tiles.generator).unwrap();
+            let tile = TILE_REGISTRY.create_object(game_objects.tiles.lamp).unwrap();
             chunk.set_tile(0, 0, TileType::new(RwLock::new(tile)));
-            
-            let mut tile = TILE_REGISTRY.create_object(game_objects.tiles.lamp).unwrap();
-            tile.info.state = Some(LampState::on());
-            chunk.set_tile(1, 0, TileType::new(RwLock::new(tile)));
-            
-            let mut tile = TILE_REGISTRY.create_object(game_objects.tiles.lamp).unwrap();
-            tile.info.state = Some(LampState::off());
-            chunk.set_tile(2, 0, TileType::new(RwLock::new(tile)));
         }
     }
 

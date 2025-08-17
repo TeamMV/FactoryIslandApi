@@ -1,19 +1,17 @@
+use crate::mods::modsdk::events::world::BeforeChunkGenerateEvent;
+use crate::mods::modsdk::events::Event;
+use crate::mods::ModLoader;
 use crate::registry::terrain::TERRAIN_REGISTRY;
 use crate::registry::{GameObjects, ObjectSource};
 use crate::world::generate::ChunkGenerator;
 use crate::world::tiles::pos::TilePos;
 use crate::world::tiles::tiles::TileType;
-use crate::world::tiles::{TileSource, Orientation};
+use crate::world::tiles::Orientation;
 use crate::world::{ChunkPos, ChunkType, CHUNK_SIZE};
-use mvengine::event::EventBus;
+use abi_stable::std_types::{RHashMap, Tuple2};
 use mvutils::save::custom::ignore_save;
 use mvutils::save::{Loader, Savable};
 use mvutils::{enum_val, Savable};
-use std::collections::HashMap;
-use abi_stable::std_types::{RHashMap, Tuple2};
-use crate::mods::ModLoader;
-use crate::mods::modsdk::events::Event;
-use crate::mods::modsdk::events::world::BeforeChunkGenerateEvent;
 
 pub const CHUNK_TILES: usize = CHUNK_SIZE as usize * CHUNK_SIZE as usize;
 
@@ -115,7 +113,7 @@ impl Chunk {
                     ToClientObject {
                         id: 0,
                         orientation: o,
-                        source: TileSource::Vanilla,
+                        source: ObjectSource::Vanilla,
                         state: 0
                     }
                 }
@@ -130,7 +128,9 @@ impl Chunk {
                         id: rw.id as u16,
                         orientation: rw.info.orientation,
                         source: rw.info.source.clone(),
-                        state: rw.info.state.as_ref().map(|s| s.client_state()).unwrap_or_default()
+                        state: rw.info.state.as_ref().map(|(s, t)| {
+                            (t.client_state)(*s)
+                        }).unwrap_or_default()
                     }
                 })
             })
@@ -154,7 +154,7 @@ impl Chunk {
 
         let mut event = enum_val!(Event, event, BeforeChunkGenerateEvent);
         if !event.has_been_cancelled {
-            generator.generate(&mut event.chunk, objects);
+            generator.generate(&mut lock, objects);
         }
     }
 
@@ -170,7 +170,7 @@ impl Chunk {
 
         let mut event = enum_val!(Event, event, BeforeChunkGenerateEvent);
         if !event.has_been_cancelled {
-            generator.generate_terrain(&mut event.chunk, objects);
+            generator.generate_terrain(&mut lock, objects);
         }
     }
 }

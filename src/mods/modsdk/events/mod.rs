@@ -33,7 +33,10 @@ pub type EventHandler = fn(Event, ModData) -> EventResponse;
 #[no_mangle]
 pub extern "C" fn fim_register_event_handler(ctx: ModCtx, handler: EventHandler) {
     let mut reg = LOADED_MODS.write();
-    if let Some(loaded) = reg.get_mut(&(&ctx).id) {
+    let id = unsafe {
+        &ctx.as_ref().unwrap().id
+    };
+    if let Some(loaded) = reg.get_mut(id) {
         loaded.event_listeners.push(handler);
     }
 }

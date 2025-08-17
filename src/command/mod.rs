@@ -14,12 +14,9 @@ use crate::command::commands::CommandsCommand;
 use crate::command::players::PlayersCommand;
 use crate::command::save::SaveCommand;
 use crate::command::stop::StopCommand;
-use crate::event::common::ServerCommandEvent;
-use crate::event::Event;
 use crate::FactoryIsland;
 use crate::registry::ObjectSource;
 use crate::server::packets::common::PlayerData;
-use crate::world::tiles::TileSource;
 
 lazy! {
     pub static COMMAND_PROCESSOR: CommandProcessor = CommandProcessor::new();
@@ -86,15 +83,16 @@ impl CommandProcessor {
             debug!("Contains: {}", this.key_map.contains_key(&cmd));
             if let Some(id) = this.key_map.get(&cmd).cloned() {
                 debug!("found!");
-                let mut event = Event::ServerCommandEvent(ServerCommandEvent {
-                    has_been_cancelled: false,
-                    command,
-                });
-                fi.mod_loader.dispatch_event(&mut event);
-                let command_event = enum_val!(Event, event, ServerCommandEvent);
-                if command_event.has_been_cancelled {
-                    return;
-                }
+                //todo
+                //let mut event = Event::ServerCommandEvent(ServerCommandEvent {
+                //    has_been_cancelled: false,
+                //    command,
+                //});
+                //fi.mod_loader.dispatch_event(&mut event);
+                //let command_event = enum_val!(Event, event, ServerCommandEvent);
+                //if command_event.has_been_cancelled {
+                //    return;
+                //}
                 let command = &mut this.commands[id];
                 command.executor.on_command(sender, cmd, parts.map(ToString::to_string).collect(), fi);
             } else {

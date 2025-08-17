@@ -146,11 +146,11 @@ impl World {
                     let _ = this.get_chunk(chunk_pos);
                 }
 
-                let arc = SaveArc::new(Mutex::new(this));
-                let clone = arc.clone();
-                let mut lock = arc.lock();
-                lock.arc = Arc::downgrade(clone.arc());
-                drop(lock);
+                let arc = Arc::new_cyclic(|weak| {
+                    this.arc = weak.clone();
+                    Mutex::new(this)
+                }).into();
+
                 Some(arc)
             } else {
                 None
@@ -183,22 +183,19 @@ impl World {
         let mut chunk_dir = full.clone();
         chunk_dir.push("chunks");
         fs::create_dir_all(&chunk_dir).expect("Failed to create world directory");
-        let this = Self {
-            meta: WorldMeta::new(name, seed),
-            directory: full,
-            chunk_directory: chunk_dir,
-            loaded_chunks: HashMap::new(),
-            chunk_manager: ChunkManager {},
-            generator_pipeline: GeneratePipeline::new(seed),
-            objects: game_objects,
-            arc: Weak::new(),
-        };
-        let arc = SaveArc::new(Mutex::new(this));
-        let clone = arc.clone();
-        let mut lock = arc.lock();
-        lock.arc = Arc::downgrade(clone.arc());
-        drop(lock);
-        arc
+
+        Arc::new_cyclic(|weak| {
+            Mutex::new(Self {
+                meta: WorldMeta::new(name, seed),
+                directory: full,
+                chunk_directory: chunk_dir,
+                loaded_chunks: HashMap::new(),
+                chunk_manager: ChunkManager {},
+                generator_pipeline: GeneratePipeline::new(seed),
+                objects: game_objects,
+                arc: weak.clone(),
+            })
+        }).into()
     }
 
     pub fn get_chunk(&mut self, chunk_pos: ChunkPos) -> ChunkType {
@@ -209,9 +206,8 @@ impl World {
         let loaded = self.chunk_manager.try_load_chunk(self, chunk_pos);
         if let Some(chunk) = loaded {
             //chunk loaded
-            let arc = SaveArc::new(Mutex::new(chunk));
-            self.loaded_chunks.insert(chunk_pos, arc.clone());
-            arc
+            self.loaded_chunks.insert(chunk_pos, chunk.clone());
+            chunk
         } else {
             let chunk = Chunk::new(chunk_pos, self.meta.seed);
             let chunk = SaveArc::new(Mutex::new(chunk));
@@ -306,7 +302,9 @@ impl World {
                 id: rw.id as u16,
                 orientation: rw.info.orientation,
                 source: rw.info.source.clone(),
-                state: rw.info.state.as_ref().map(|s| s.client_state()).unwrap_or_default()
+                state: rw.info.state.as_ref().map(|(s, t)| {
+                    (t.client_state)(*s)
+                }).unwrap_or_default()
             };
 
             let players = PLAYERS.read();
@@ -378,8 +376,6 @@ impl World {
             if let Some(tile) = &lock.tiles[index] {
                 let mut tile_lock = tile.write();
                 if let InnerTile::Update(updatable, tile) = &mut tile_lock.info.inner {
-                    drop(tile_lock);
-                    drop(lock);
                     updatable.send_update(*tile, pos, self);
                 }
             }
@@ -394,7 +390,9 @@ impl World {
                 id: rw.id as u16,
                 orientation: rw.info.orientation,
                 source: rw.info.source.clone(),
-                state: rw.info.state.as_ref().map(|s| s.client_state()).unwrap_or_default()
+                state: rw.info.state.as_ref().map(|(s, t)| {
+                    (t.client_state)(*s)
+                }).unwrap_or_default()
             };
 
             let players = PLAYERS.read();

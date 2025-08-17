@@ -1,5 +1,4 @@
 pub mod modsdk;
-pub mod real;
 
 use std::{env, fs};
 use std::alloc::Layout;
@@ -67,7 +66,9 @@ impl ModLoader {
                             let fi_mod = LoadedMod::load(path);
                             if let Ok(fi_mod) = fi_mod {
                                 info!("Mod '{}' has been loaded", fi_mod.inner.modid);
-                                if loaded.contains_key(&fi_mod.inner.modid) {
+                                let modid = fi_mod.inner.modid.clone();
+                                let modid = modid.into_c();
+                                if loaded.contains_key(&modid) {
                                     warn!("Two mods have the same modid! That is considered illegal and will be handled by the authorities.");
                                     continue;
                                 }
@@ -89,8 +90,7 @@ impl ModLoader {
         let loaded = LOADED_MODS.read();
         loaded
             .iter()
-            .filter_map(|(k, v)| v.inner.specs.res.yn(Some(k), None))
-            .cloned()
+            .filter_map(|(k, v)| v.inner.specs.res.yn(Some(k.to_string()), None))
             .collect()
     }
 
@@ -98,7 +98,7 @@ impl ModLoader {
         let loaded = LOADED_MODS.read();
         for m in loaded.values() {
             let data = m.mod_data;
-            for listener in m.event_listeners {
+            for listener in &m.event_listeners {
                 let resp = listener(event.clone(), data);
                 event = match resp {
                     EventResponse::None => event,
@@ -108,13 +108,21 @@ impl ModLoader {
         }
         event
     }
+
+    pub fn unload() {
+        let mut mods = LOADED_MODS.write();
+        for m in mods.values_mut() {
+            m.unload();
+        }
+    }
 }
 
 pub struct LoadedMod {
     pub(crate) inner: ModInfo,
     library: Library,
     event_listeners: Vec<EventHandler>,
-    mod_data: ModData
+    mod_data: ModData,
+    free_fn: fn(ModData)
 }
 
 impl LoadedMod {
@@ -130,6 +138,9 @@ impl LoadedMod {
         let init_fn: Symbol<fn() -> ModData> = lib.get(b"server_init").map_err(|e| e.to_string())?;
         let init_fn = *init_fn.deref();
 
+        let free_fn: Symbol<fn(ModData)> = lib.get(b"server_stop").map_err(|e| e.to_string())?;
+        let free_fn = *free_fn.deref();
+
         let data = init_fn();
 
         Ok(Self {
@@ -137,11 +148,17 @@ impl LoadedMod {
             library: lib,
             event_listeners: vec![],
             mod_data: data,
+            free_fn,
         })
+    }
+
+    pub fn unload(&mut self) {
+        (self.free_fn)(self.mod_data)
     }
 }
 
 unsafe impl Send for LoadedMod {}
+unsafe impl Sync for LoadedMod {}
 
 #[derive(Savable)]
 pub struct ModInfo {

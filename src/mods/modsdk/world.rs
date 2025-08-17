@@ -1,10 +1,11 @@
+use std::mem;
 use abi_stable::std_types::RStr;
 use abi_stable::traits::IntoReprC;
 use mvengine::utils::savers::SaveArc;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::{Mutex, MutexGuard, RwLock};
 use crate::mods::modsdk::{store_lock, MOpt, MUniqueAccess, ModCtx};
 use crate::mods::modsdk::player::MPlayer;
-use crate::registry;
+use crate::{p, registry};
 use crate::registry::ObjectSource;
 use crate::world::chunk::Chunk;
 use crate::world::tiles::tiles::{Tile, TileType};
@@ -24,7 +25,7 @@ pub enum MTileSetReason {
     Player(MPlayer)
 }
 
-#[derive(Copy, Clone, PartialOrd, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, PartialOrd, PartialEq, Debug)]
 #[repr(C)]
 pub struct MTileUnit {
     pub x: f64,
@@ -51,7 +52,7 @@ impl MTileUnit {
     }
 }
 
-#[derive(Copy, Clone, PartialOrd, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, PartialOrd, PartialEq, Hash, Debug, Default)]
 #[repr(C)]
 pub struct MChunkPos {
     pub x: i32,
@@ -80,10 +81,14 @@ impl MChunkPos {
 
 #[no_mangle]
 pub extern "C" fn fim_world_get_chunk(mut world: MWorld, pos: MChunkPos) -> MUniqueAccess<MChunk> {
+    let world = p!(world as World);
     let chunk = world.get_chunk(pos.to_normal());
-    let chunk_lock = chunk.lock();
+    let mut chunk_lock = chunk.lock();
     let ptr: MChunk = &mut *chunk_lock;
-    let handle = store_lock(chunk_lock);
+    let tr = unsafe {
+        mem::transmute::<_, MutexGuard<'static, Chunk>>(chunk_lock)
+    };
+    let handle = store_lock(tr);
     MUniqueAccess {
         lock_handle: handle,
         data: ptr,
@@ -92,20 +97,26 @@ pub extern "C" fn fim_world_get_chunk(mut world: MWorld, pos: MChunkPos) -> MUni
 
 #[no_mangle]
 pub extern "C" fn fim_world_unload_chunk(mut world: MWorld, pos: MChunkPos) {
+    let world = p!(world as World);
     world.unload_chunk(pos.to_normal());
 }
 
 #[no_mangle]
-pub extern "C" fn fim_world_name(world: MWorld) -> RStr {
+pub extern "C" fn fim_world_name(world: MWorld) -> RStr<'static> {
+    let world = p!(world as World);
     world.name().into_c()
 }
 
 #[no_mangle]
 pub extern "C" fn fim_world_get_tile_at(mut world: MWorld, pos: TilePos) -> MOpt<MUniqueAccess<MTile>> {
+    let world = p!(world as World);
     if let Some(tile) = world.get_tile_at(pos) {
         let mut tile_lock = tile.write();
         let ptr: MTile = &mut *tile_lock;
-        let handle = store_lock(tile_lock);
+        let tr = unsafe {
+            mem::transmute::<_, MutexGuard<'static, Tile>>(tile_lock)
+        };
+        let handle = store_lock(tr);
         MOpt::Some(MUniqueAccess {
             lock_handle: handle,
             data: ptr,
@@ -117,16 +128,19 @@ pub extern "C" fn fim_world_get_tile_at(mut world: MWorld, pos: TilePos) -> MOpt
 
 #[no_mangle]
 pub extern "C" fn fim_world_set_terrain_at(mut world: MWorld, pos: TilePos, reason: MTileSetReason, tile: WorldTerrain) {
+    let world = p!(world as World);
     world.set_terrain_at(pos, tile, TileSetReason::from_m(reason));
 }
 
 #[no_mangle]
 pub extern "C" fn fim_world_get_terrain_at(mut world: MWorld, pos: TilePos) -> WorldTerrain {
+    let world = p!(world as World);
     world.get_terrain_at(pos)
 }
 
 #[no_mangle]
 pub extern "C" fn fim_world_set_tile_at(mut world: MWorld, pos: TilePos, reason: MTileSetReason, tile: Tile) {
+    let world = p!(world as World);
     let arc = SaveArc::new(RwLock::new(tile));
     world.set_tile_at(pos, arc, TileSetReason::from_m(reason));
 }
@@ -163,10 +177,12 @@ pub extern "C" fn fim_create_terrain_unchecked(id: usize) -> WorldTerrain {
 
 #[no_mangle]
 pub extern "C" fn fim_world_is_chunk_loaded(world: MWorld, pos: MChunkPos) -> bool {
+    let world = p!(world as World);
     world.is_loaded(pos.to_normal())
 }
 
 #[no_mangle]
 pub extern "C" fn fim_world_exists_file(world: MWorld, pos: MChunkPos) -> bool {
+    let world = p!(world as World);
     world.exists_file(pos.to_normal())
 }
