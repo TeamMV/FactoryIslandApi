@@ -1,9 +1,7 @@
 use crate::registry::Registry;
-use crate::world::tiles::tiles::{ObjControl, Tile, TileInfo, TileState};
+use crate::world::tiles::implementations::newapi::lamp::{LampState, LampTile};
+use crate::world::tiles::tiles::{Tile, TileInfo};
 use mvutils::lazy;
-use crate::{leak, this};
-use crate::world::tiles::implementations::lamp::LampTile;
-use crate::world::tiles::update::UpdateTile;
 
 lazy! {
     pub static TILE_REGISTRY: Registry<Tile> = Registry::new();
@@ -29,5 +27,5 @@ macro_rules! define_tiles {
 define_tiles!(Tiles, register_all, [
     air = TileInfo::vanilla_static(),
     wood = TileInfo::vanilla_static(),
-    lamp = TileInfo::vanilla_update_state(LampTile::new(), LampTile::create_update_trait(), LampTile::create_state_trait(), LampTile::create_oc_trait()),
+    lamp = TileInfo::vanilla_update_with(LampTile::new(), LampState::new()),
 ]);

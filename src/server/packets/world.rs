@@ -24,7 +24,7 @@ pub struct TerrainSetPacket {
 pub struct TileSetFromClientPacket {
     pub pos: TilePos,
     pub tile_id: usize,
-    pub tile_state: usize,
+    pub tile_state: Vec<u8>,
     pub orientation: Orientation
 }
 

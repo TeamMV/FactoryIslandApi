@@ -27,6 +27,8 @@ use std::time::Duration;
 use std::{env, thread};
 use std::sync::atomic::{AtomicBool, Ordering};
 use abi_stable::traits::IntoReprC;
+use bytebuffer::ByteBuffer;
+use mvutils::bytebuffer::ByteBufferExtras;
 use mvutils::clock::Clock;
 use mvutils::unsafe_utils::Unsafe;
 use parking_lot::RwLock;
@@ -240,20 +242,23 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
             }
             ServerBoundPacket::TileSet(packet) => {
                 if let Some(mut tile) = TILE_REGISTRY.create_object(packet.tile_id) {
-                    if let Some((state, t)) = &mut tile.info.state {
-                        (t.apply_client_state)(*state, packet.tile_state);
+                    if let Some((state)) = &mut tile.info.state {
+                        let mut loader = ByteBuffer::from_vec_le(packet.tile_state.clone());
+                        if let Err(e) = state.load_from_client(&mut loader) {
+                            error!("Error when loading tile state from client: {e}");
+                        }
                     }
                     let cloned = self.world.clone();
                     let mut world_lock = cloned.lock();
                     let player = players.get(&client.id()).cloned();
                     if let Some(player) = player {
                         let reason = TileSetReason::Player(player.lock().data.clone());
-                        
+
                         let to_client = ToClientObject {
                             id: packet.tile_id as u16,
                             source: tile.info.source.clone(),
                             orientation: packet.orientation,
-                            state: packet.tile_state,
+                            state: packet.tile_state.clone(),
                         };
 
                         world_lock.set_tile_at(packet.pos.clone(), tile.to_type(), reason.clone());

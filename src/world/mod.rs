@@ -298,13 +298,18 @@ impl World {
             drop(lock);
 
             let rw = tile.read();
+            let state = if let Some(s) = &rw.info.state {
+                let mut buf = ByteBuffer::new_le();
+                s.save_for_client(&mut buf);
+                buf.into_vec()
+            } else {
+                vec![]
+            };
             let client_obj = ToClientObject {
                 id: rw.id as u16,
                 orientation: rw.info.orientation,
                 source: rw.info.source.clone(),
-                state: rw.info.state.as_ref().map(|(s, t)| {
-                    (t.client_state)(*s)
-                }).unwrap_or_default()
+                state
             };
 
             let players = PLAYERS.read();
@@ -350,7 +355,7 @@ impl World {
                 id,
                 orientation,
                 source: template.info.source,
-                state: 0
+                state: vec![]
             };
 
             let players = PLAYERS.read();
@@ -375,8 +380,8 @@ impl World {
             let index = Chunk::get_index(&pos);
             if let Some(tile) = &lock.tiles[index] {
                 let mut tile_lock = tile.write();
-                if let InnerTile::Update(updatable, tile) = &mut tile_lock.info.inner {
-                    updatable.send_update(*tile, pos, self);
+                if let InnerTile::Update(updatable) = &mut tile_lock.info.inner {
+                    updatable.send_update(pos, self);
                 }
             }
         }
@@ -386,13 +391,18 @@ impl World {
         let tile = self.get_tile_at(at.clone());
         if let Some(tile) = tile {
             let rw = tile.read();
+            let state = if let Some(s) = &rw.info.state {
+                let mut buf = ByteBuffer::new_le();
+                s.save_for_client(&mut buf);
+                buf.into_vec()
+            } else {
+                vec![]
+            };
             let client_obj = ToClientObject {
                 id: rw.id as u16,
                 orientation: rw.info.orientation,
                 source: rw.info.source.clone(),
-                state: rw.info.state.as_ref().map(|(s, t)| {
-                    (t.client_state)(*s)
-                }).unwrap_or_default()
+                state
             };
 
             let players = PLAYERS.read();
@@ -416,7 +426,7 @@ impl World {
             let mut lock = chunk.lock();
             for (tile, pos) in lock.iter_tiles() {
                 let tile_lock = tile.read();
-                if let InnerTile::Update(_, _) = &tile_lock.info.inner {
+                if let InnerTile::Update(_) = &tile_lock.info.inner {
                     tiles.push(tile.clone());
                 }
                 if tile_lock.info.should_tick {
@@ -433,8 +443,8 @@ impl World {
             let mut lock = tile.write();
             match &mut lock.info.inner {
                 InnerTile::Static => {}
-                InnerTile::Update(update, tile) => {
-                    update.end_tick(*tile);
+                InnerTile::Update(update) => {
+                    update.end_tick();
                 }
             }
         }

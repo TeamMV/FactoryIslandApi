@@ -1,15 +1,14 @@
-use abi_stable::std_types::RVec;
-use log::debug;
+use crate::mods::modsdk::MOpt;
 use crate::registry::tiles::TILE_REGISTRY;
 use crate::registry::{ObjectSource, Registerable};
+use crate::world::tiles::newapi::state::StateTile;
+use crate::world::tiles::newapi::update::UpdateTile;
+use crate::world::tiles::update::This;
 use crate::world::tiles::Orientation;
+use abi_stable::std_types::RVec;
 use mvengine::utils::savers::SaveArc;
 use mvutils::save::{Loader, Savable, Saver};
-use mvutils::enum_val;
 use parking_lot::RwLock;
-use crate::mods::modsdk::MOpt;
-use crate::{leak, this};
-use crate::world::tiles::update::{This, UpdateTile, UpdateTileTrait};
 
 pub type TileType = SaveArc<RwLock<Tile>>;
 
@@ -32,14 +31,15 @@ impl Savable for Tile {
         self.info.orientation.save(saver);
         match &self.info.inner {
             InnerTile::Static => 0u8.save(saver),
-            InnerTile::Update(b, this) => {
+            InnerTile::Update(_) => {
                 1u8.save(saver);
             }
         }
-        if let Some((tile, state)) = &self.info.state {
+        if let Some(b) = &self.info.state {
             1u8.save(saver);
-            let vec = (state.save_to_vec)(*tile);
-            vec.save(saver);
+            if let Some(buf) = saver.as_any_mut().downcast_mut() {
+                b.save(buf);
+            }
         } else {
             0u8.save(saver);
         }
@@ -62,10 +62,10 @@ impl Savable for Tile {
             template.info.inner = inner;
             let has_state = u8::load(loader)?;
             if has_state == 1 {
-                let vec = RVec::<u8>::load(loader)?;
-                if let Some((tile, state)) = &mut template.info.state {
-                    let o = (state.load_into_self)(vec, *tile);
-                    o.to_rust().ok_or(format!("Loading of state failed for id: {id}"))?;
+                if let Some(buf) = loader.as_any_mut().downcast_mut() {
+                    if let Some(state) = &mut template.info.state {
+                        state.load_into(buf)?;
+                    }
                 }
             }
             Ok(template)
@@ -75,10 +75,18 @@ impl Savable for Tile {
     }
 }
 
-#[derive(Clone)]
 pub enum InnerTile {
     Static,
-    Update(UpdateTileTrait, This),
+    Update(Box<dyn UpdateTile>),
+}
+
+impl Clone for InnerTile {
+    fn clone(&self) -> Self {
+        match self {
+            InnerTile::Static => InnerTile::Static,
+            InnerTile::Update(b) => InnerTile::Update(b.box_clone())
+        }
+    }
 }
 
 impl Registerable for Tile {
@@ -98,50 +106,32 @@ pub struct TileInfo {
     pub inner: InnerTile,
     pub source: ObjectSource,
     pub should_tick: bool,
-    pub state: Option<(This, TileStateTrait)>,
-    pub oct: Option<(This, ObjControlTrait)>
+    pub state: Option<Box<dyn StateTile>>,
 }
 
 impl Clone for TileInfo {
     fn clone(&self) -> Self {
-        let (inner, state, oct) = if let Some((tile, oct)) = &self.oct {
-            let new = (oct.create_copy)(*tile);
-            let inner = if let InnerTile::Update(t, _) = &self.inner {
-                InnerTile::Update(t.clone(), new)
-            } else {
-                self.inner.clone()
-            };
-            let state = self.state.clone().map(|x| (new, x.1));
-            let oct = self.oct.clone().map(|x| (new, x.1));
-            (inner, state, oct)
-        } else {
-            (self.inner.clone(), self.state.clone(), self.oct.clone())
-        };
         Self {
-            orientation: self.orientation.clone(),
-            inner,
+            orientation: self.orientation,
+            inner: self.inner.clone(),
             source: self.source.clone(),
             should_tick: self.should_tick,
-            state,
-            oct,
+            state: self.state.as_ref().map(|x| x.box_clone()),
         }
-    }
-}
-
-impl Drop for TileInfo {
-    fn drop(&mut self) {
-        debug!("TileInfo drop1");
-        if let Some((tile, oct)) = &self.oct {
-            unsafe {
-                (oct.free)(*tile)
-            }
-        }
-        debug!("TileInfo drop2");
     }
 }
 
 unsafe impl Send for TileInfo {}
 unsafe impl Sync for TileInfo {}
+
+macro_rules! to_opt_box {
+    ($n:ident) => {{
+        match $n {
+            None => None,
+            Some(a) => Some(Box::new(a))
+        }
+    }};
+}
 
 impl TileInfo {
     pub fn vanilla_static() -> Self {
@@ -151,89 +141,36 @@ impl TileInfo {
             source: ObjectSource::Vanilla,
             should_tick: false,
             state: None,
-            oct: None,
         }
     }
 
-    pub fn vanilla_update<T: UpdateTile + ObjControl>(
-        tile: T,
-        handler: UpdateTileTrait,
-        oct: ObjControlTrait,
-    ) -> Self {
-        let tile = this!(leak!(tile));
+    pub fn vanilla_update<U: UpdateTile + 'static>(update: U) -> Self {
         Self {
             orientation: Orientation::North,
-            inner: InnerTile::Update(handler, tile),
+            inner: InnerTile::Update(Box::new(update)),
             source: ObjectSource::Vanilla,
             should_tick: false,
             state: None,
-            oct: Some((tile, oct)),
         }
     }
 
-    pub fn vanilla_update_ticking<T: UpdateTile + ObjControl>(
-        tile: T,
-        handler: UpdateTileTrait,
-        oct: ObjControlTrait,
-    ) -> Self {
-        let tile = this!(leak!(tile));
-        Self {
-            orientation: Orientation::North,
-            inner: InnerTile::Update(handler, tile),
-            source: ObjectSource::Vanilla,
-            should_tick: true,
-            state: None,
-            oct: Some((tile, oct)),
-        }
-    }
-
-    pub fn vanilla_static_state<T: TileState + ObjControl>(
-        tile: T,
-        state: TileStateTrait,
-        oct: ObjControlTrait,
-    ) -> Self {
-        let tile = this!(leak!(tile));
+    pub fn vanilla_static_with<S: StateTile + 'static>(state: S) -> Self {
         Self {
             orientation: Orientation::North,
             inner: InnerTile::Static,
             source: ObjectSource::Vanilla,
             should_tick: false,
-            state: Some((tile, state)),
-            oct: Some((tile, oct)),
+            state: Some(Box::new(state)),
         }
     }
 
-    pub fn vanilla_update_state<T: UpdateTile + TileState + ObjControl>(
-        tile: T,
-        handler: UpdateTileTrait,
-        state: TileStateTrait,
-        oct: ObjControlTrait,
-    ) -> Self {
-        let tile = this!(leak!(tile));
+    pub fn vanilla_update_with<U: UpdateTile + 'static, S: StateTile + 'static>(update: U, state: S) -> Self {
         Self {
             orientation: Orientation::North,
-            inner: InnerTile::Update(handler, tile),
+            inner: InnerTile::Update(Box::new(update)),
             source: ObjectSource::Vanilla,
             should_tick: false,
-            state: Some((tile, state)),
-            oct: Some((tile, oct)),
-        }
-    }
-
-    pub fn vanilla_update_ticking_state<T: UpdateTile + TileState + ObjControl>(
-        tile: T,
-        handler: UpdateTileTrait,
-        state: TileStateTrait,
-        oct: ObjControlTrait,
-    ) -> Self {
-        let tile = this!(leak!(tile));
-        Self {
-            orientation: Orientation::North,
-            inner: InnerTile::Update(handler, tile),
-            source: ObjectSource::Vanilla,
-            should_tick: true,
-            state: Some((tile, state)),
-            oct: Some((tile, oct)),
+            state: Some(Box::new(state)),
         }
     }
 }

@@ -12,7 +12,7 @@ debug = false
 
 [dependencies]
 mvlogger = "0.4.0"
-mvutils = "1.5.4"
+mvutils = "1.5.9"
 mvengine = { path = "../../MVEngine" }
 mvengine_proc = { path = "../../MVEngine/Proc", package = "mvengine-proc-macro" }
 

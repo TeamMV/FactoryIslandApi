@@ -9,9 +9,11 @@ use crate::world::tiles::tiles::TileType;
 use crate::world::tiles::Orientation;
 use crate::world::{ChunkPos, ChunkType, CHUNK_SIZE};
 use abi_stable::std_types::{RHashMap, Tuple2};
+use bytebuffer::ByteBuffer;
 use mvutils::save::custom::ignore_save;
 use mvutils::save::{Loader, Savable};
 use mvutils::{enum_val, Savable};
+use mvutils::bytebuffer::ByteBufferExtras;
 
 pub const CHUNK_TILES: usize = CHUNK_SIZE as usize * CHUNK_SIZE as usize;
 
@@ -107,14 +109,14 @@ impl Chunk {
                         id,
                         orientation: o,
                         source: tile.info.source.clone(),
-                        state: 0
+                        state: vec![]
                     }
                 } else {
                     ToClientObject {
                         id: 0,
                         orientation: o,
                         source: ObjectSource::Vanilla,
-                        state: 0
+                        state: vec![]
                     }
                 }
             })
@@ -124,13 +126,18 @@ impl Chunk {
             .map(|i| {
                 self.tiles[i].as_ref().map(|t| {
                     let rw = t.read();
+                    let state = if let Some(s) = &rw.info.state {
+                        let mut buf = ByteBuffer::new_le();
+                        s.save_for_client(&mut buf);
+                        buf.into_vec()
+                    } else {
+                        vec![]
+                    };
                     ToClientObject {
                         id: rw.id as u16,
                         orientation: rw.info.orientation,
                         source: rw.info.source.clone(),
-                        state: rw.info.state.as_ref().map(|(s, t)| {
-                            (t.client_state)(*s)
-                        }).unwrap_or_default()
+                        state
                     }
                 })
             })
@@ -256,5 +263,5 @@ pub struct ToClientObject {
     pub id: u16,
     pub source: ObjectSource,
     pub orientation: Orientation,
-    pub state: usize
+    pub state: Vec<u8>
 }

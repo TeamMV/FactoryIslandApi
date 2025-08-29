@@ -10,6 +10,7 @@ pub mod update;
 pub mod implementations;
 pub mod resources;
 pub mod utils;
+pub mod newapi;
 
 #[derive(Savable, Clone, Copy, Debug)]
 #[repr(C)]
