@@ -2,6 +2,7 @@ use crate::registry::Registry;
 use crate::world::tiles::implementations::newapi::lamp::{LampState, LampTile};
 use crate::world::tiles::tiles::{Tile, TileInfo};
 use mvutils::lazy;
+use crate::world::tiles::implementations::newapi::conveyor::ConveyorState;
 
 lazy! {
     pub static TILE_REGISTRY: Registry<Tile> = Registry::new();
@@ -28,4 +29,5 @@ define_tiles!(Tiles, register_all, [
     air = TileInfo::vanilla_static(),
     wood = TileInfo::vanilla_static(),
     lamp = TileInfo::vanilla_update_with(LampTile::new(), LampState::new()),
+    conveyor = TileInfo::vanilla_static_with(ConveyorState::new())
 ]);

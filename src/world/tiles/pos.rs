@@ -1,9 +1,10 @@
 use std::fmt::{Debug, Formatter};
-use mvengine::ui::geometry::SimpleRect;
+use mvengine::math::vec::Vec2;
+use mvengine::ui::geometry::{geom, SimpleRect};
 use mvutils::Savable;
 use mvutils::save::{Loader, Savable, Saver};
 use crate::mods::modsdk::MChunkPos;
-use crate::world::{ChunkPos, PixelUnit, CHUNK_SIZE};
+use crate::world::{ChunkPos, PixelUnit, SingleTileUnit, TileUnit, CHUNK_SIZE};
 
 #[derive(Clone, Default)]
 #[repr(C)]
@@ -88,6 +89,10 @@ impl TilePos {
             self.left(1)
         ]
     }
+
+    pub fn distance_from<T: TileDistance>(&self, t: &T) -> SingleTileUnit {
+        t.distance(self)
+    }
 }
 
 impl From<(i32, i32)> for TilePos {
@@ -109,5 +114,25 @@ impl Savable for TilePos {
 
     fn load(loader: &mut impl Loader) -> Result<Self, String> {
         <(i32, i32)>::load(loader).map(Self::from)
+    }
+}
+
+pub trait TileDistance {
+    fn distance(&self, from: &TilePos) -> SingleTileUnit;
+}
+
+impl TileDistance for TilePos {
+    fn distance(&self, from: &TilePos) -> SingleTileUnit {
+        let v1 = Vec2::from_i32s(self.raw);
+        let v2 = Vec2::from_i32s(from.raw);
+        geom::distance(v1, v2) as SingleTileUnit
+    }
+}
+
+impl TileDistance for TileUnit {
+    fn distance(&self, from: &TilePos) -> SingleTileUnit {
+        let v1 = Vec2::new(self.0 as f32, self.1 as f32);
+        let v2 = Vec2::from_i32s(from.raw);
+        geom::distance(v1, v2) as SingleTileUnit
     }
 }

@@ -12,7 +12,7 @@ impl CommandExecutor for PlayersCommand {
         } else {
             for player in players.values() {
                 let lock = player.lock();
-                let name = &lock.data.name;
+                let name = &lock.data.profile.name;
                 sender.send_message(format!("{name}"));
             }
         }

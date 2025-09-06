@@ -25,3 +25,4 @@ hashbrown = "0.15.2"
 noise = "0.9.0"
 lz4_flex = "0.11.3" #compression
 abi_stable = "0.11.3"
+uuid = { version = "1.18.1", features = ["v4"] }

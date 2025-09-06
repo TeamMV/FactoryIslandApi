@@ -25,7 +25,7 @@ pub extern "C" fn fim_player_data(player: MPlayer) -> MOpt<MPlayerData> {
     let players = PLAYERS.read();
     if let Some(p) = players.get(&player) {
         let p_lock = p.lock();
-        let name = p_lock.data.name.clone().into_c();
+        let name = p_lock.data.profile.name.clone().into_c();
         let pos = p_lock.position;
         let pos = MTileUnit::from_normal(pos);
         MOpt::Some(MPlayerData {

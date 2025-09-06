@@ -77,10 +77,6 @@ impl CommandProcessor {
         if let Some(cmd) = parts.next() {
             let cmd = cmd.to_string();
             let cmd_b = cmd.as_bytes();
-            debug!("Processing command: '{cmd}'");
-            debug!("Processing command dbg: '{cmd_b:?}'");
-            debug!("Command list: {:?}", this.key_map);
-            debug!("Contains: {}", this.key_map.contains_key(&cmd));
             if let Some(id) = this.key_map.get(&cmd).cloned() {
                 debug!("found!");
                 //todo

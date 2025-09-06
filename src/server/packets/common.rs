@@ -1,12 +1,15 @@
+use crate::ingredients::IngredientKind;
+use crate::player::uuid::UUID;
+use crate::registry::ObjectSource;
 use mvengine::net::server::ClientId;
 use mvutils::Savable;
-use crate::registry::ObjectSource;
+use crate::player::profile::PlayerProfile;
 
 #[derive(Clone, Debug, Savable)]
 pub struct ClientDataPacket {
-    pub name: String,
+    pub profile: PlayerProfile,
     pub render_distance: i32,
-    pub client_id: ClientId
+    pub client_id: ClientId,
 }
 
 #[derive(Clone, Savable)]
@@ -20,6 +23,7 @@ pub struct ServerStatePacket {
     pub mods: Vec<String>,
     pub players: Vec<PlayerData>,
     pub tiles: Vec<TileKind>,
+    pub ingredients: Vec<IngredientKind>,
     pub client_id: ClientId
 }
 

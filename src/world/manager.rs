@@ -18,58 +18,48 @@ pub struct ChunkManager;
 
 impl ChunkManager {
     pub fn try_load_chunk(&self, world: &World, chunk_pos: ChunkPos) -> Option<ChunkType> {
-        let mut dir = world.chunk_directory().clone();
+        let dir = world.chunk_directory();
         let filename = format!("c{}_{}.chunk", chunk_pos.0, chunk_pos.1);
-        dir.push(&filename);
-
-        let mut file = File::options().read(true).open(&dir);
-        match file {
-            Ok(mut file) => {
-                let mut compressed = Vec::new();
-                if let Err(_) = file.read_to_end(&mut compressed) {
-                    return None;
-                }
-                
-                if let Ok(decompressed) = decompress_size_prepended(compressed.as_slice()) {
-                    let mut buffer = ByteBuffer::from(decompressed);
-
-                    debug!("loaded chunk {chunk_pos:?}");
-
-                    let chunk = Chunk::load(&mut buffer).ok()?;
-                    let arced = ChunkType::new(Mutex::new(chunk));
-                    Chunk::generate_terrain(&arced, world.generator(), world.objects());
-                    let mut lock = arced.lock();
-                    lock.terrain.apply_modifications();
-                    drop(lock);
-                    Some(arced)
-                } else {
-                    error!("Error decompressing chunk file");
-                    None
-                }
+        if let Some(mut file) = dir.read_file(&filename) {
+            let mut compressed = Vec::new();
+            if let Err(_) = file.read_to_end(&mut compressed) {
+                return None;
             }
-            Err(_) => None
+
+            if let Ok(decompressed) = decompress_size_prepended(compressed.as_slice()) {
+                let mut buffer = ByteBuffer::from(decompressed);
+
+                debug!("loaded chunk {chunk_pos:?}");
+
+                let chunk = Chunk::load(&mut buffer).ok()?;
+                let arced = ChunkType::new(Mutex::new(chunk));
+                Chunk::generate_terrain(&arced, world.generator(), world.objects());
+                let mut lock = arced.lock();
+                lock.terrain.apply_modifications();
+                drop(lock);
+                Some(arced)
+            } else {
+                error!("Error decompressing chunk file");
+                None
+            }
+        } else {
+            None
         }
     }
 
     pub fn try_save_chunk(&self, world: &World, chunk: &Chunk) {
-        let mut dir = world.chunk_directory().clone();
+        let dir = world.chunk_directory();
         let filename = format!("c{}_{}.chunk", chunk.position.0, chunk.position.1);
-        dir.push(&filename);
-
-        let mut file = File::options().write(true).open(&dir);
-        if let Err(_) = file {
-            file = File::create(&dir);
-        }
-        if let Ok(mut file) = file {
+        if let Some(mut file) = dir.write_file(&filename) {
             let mut buffer = ByteBuffer::new();
             chunk.save(&mut buffer);
-            
+
             let compressed = compress_prepend_size(buffer.as_bytes());
-            
+
             file.write_all(compressed.as_slice()).expect("Failed to write to file");
             debug!("Saved chunk {:?}", chunk.position);
-            return;
+        } else {
+            error!("failed to create or open file: {:?} in {:?}", filename, dir);
         }
-        error!("failed to create or open file: {:?} in {:?}", file, dir);
     }
 }

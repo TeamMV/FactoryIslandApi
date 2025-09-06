@@ -1,7 +1,7 @@
 use mvengine::net::server::ClientId;
 use mvutils::Savable;
 use crate::server::packets::common::{ClientDataPacket, PlayerData};
-use crate::world::TileUnit;
+use crate::world::{SingleTileUnit, TileUnit};
 
 #[derive(Clone, Savable)]
 pub struct PlayerMovePacket {
@@ -34,4 +34,10 @@ pub struct PlayerChatPacket {
 pub struct OtherPlayerChatPacket {
     pub player: PlayerData,
     pub message: String,
+}
+
+#[derive(Clone, Debug, Savable)]
+pub struct PlayerDataPacket {
+    pub pos: TileUnit,
+    pub reach: SingleTileUnit
 }

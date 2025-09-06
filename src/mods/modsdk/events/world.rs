@@ -24,7 +24,6 @@ pub struct BeforeChunkGenerateTerrainEvent {
 pub struct TileSetEvent {
     pub has_been_cancelled: bool,
     pub pos: TilePos,
-    pub world: MWorld,
     pub tile: MTile,
     pub reason: MTileSetReason
 }

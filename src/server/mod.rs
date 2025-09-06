@@ -2,7 +2,7 @@ pub mod packets;
 
 use std::io::{stdout, BufRead};
 use std::{io, thread};
-use log::{error, LevelFilter};
+use log::{debug, error, LevelFilter};
 pub use crate::server::packets::{ClientBoundPacket, ServerBoundPacket};
 use mvengine::net::server::Server;
 use mvutils::clock::Clock;

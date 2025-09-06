@@ -1,44 +1,60 @@
+pub mod uuid;
+pub mod profile;
+
+use std::ops::{Deref, DerefMut};
 use crate::server::packets::common::ClientDataPacket;
 use crate::server::packets::world::{ChunkDataPacket, ChunkUnloadPacket};
 use crate::server::ClientBoundPacket;
-use crate::world::{ChunkPos, TileUnit, WorldType, CHUNK_SIZE};
+use crate::world::{ChunkPos, SingleTileUnit, TileUnit, WorldType, CHUNK_SIZE};
 use hashbrown::HashSet;
 use mvengine::net::server::ClientEndpoint;
 use mvengine::utils::savers::SaveArc;
-use mvutils::save::Savable;
+use mvutils::save::{Loader, Savable, Saver};
 use mvutils::Savable;
 use parking_lot::Mutex;
 use std::sync::Arc;
-use crate::mods::ModLoader;
+use mvutils::bytebuffer::ByteBufferExtras;
+use uuid::UUID;
+use crate::player::profile::PlayerProfile;
+use crate::server::packets::player::PlayerDataPacket;
 
 pub type PlayerType = SaveArc<Mutex<Player>>;
 
-const DEFAULT_NAME: &str = "unknown";
 pub const UNLOAD_DISTANCE: i32 = 3;
+
+impl Default for ClientDataPacket {
+    fn default() -> Self {
+        Self {
+            profile: PlayerProfile::new(),
+            render_distance: 1,
+            client_id: 0
+        }
+    }
+}
 
 #[derive(Savable)]
 pub struct Player {
+    #[unsaved]
     pub data: ClientDataPacket,
     #[unsaved]
     client_endpoint: Option<Arc<ClientEndpoint>>,
     #[unsaved]
     world: Option<WorldType>,
     pub position: TileUnit,
+    #[unsaved]
     pub loaded_chunks: HashSet<ChunkPos>,
+    pub reach: SingleTileUnit
 }
 
 impl Player {
     pub fn new(endpoint: Arc<ClientEndpoint>, world: WorldType) -> SaveArc<Mutex<Self>> {
         let this = Self {
-            data: ClientDataPacket {
-                name: DEFAULT_NAME.to_string(),
-                render_distance: 1,
-                client_id: endpoint.id()
-            },
+            data: ClientDataPacket::default(),
             client_endpoint: Some(endpoint),
             world: Some(world),
             position: (0.0, 0.0),
             loaded_chunks: HashSet::new(),
+            reach: 7.0,
         };
         SaveArc::new(Mutex::new(this))
     }
@@ -87,6 +103,13 @@ impl Player {
 
     pub(crate) fn on_disconnect(&mut self) {
         self.loaded_chunks.clear();
+        //save player to file
+        if let Some(world) = &self.world {
+            let lock = world.lock();
+            let dir = lock.players_directory();
+            let filename = format!("{:?}.sav", self.data.profile.uuid);
+            dir.save_object(self, &filename);
+        }
     }
 
     pub fn move_to(&mut self, pos: TileUnit) {
@@ -102,8 +125,24 @@ impl Player {
 
     pub fn apply_data(&mut self, packet: ClientDataPacket) {
         self.data = packet;
+        if let Some(world) = &self.world {
+            let lock = world.lock();
+            let filename = format!("{:?}.sav", self.data.profile.uuid);
+            let players_dir = lock.players_directory();
+            if let Some(t) = players_dir.read_object::<Player>(&filename) {
+                self.position = t.position;
+                self.reach = t.reach;
+            }
+        }
+
         self.after_move(self.data.render_distance);
 
+        if let Some(endpoint) = &self.client_endpoint {
+            endpoint.send(ClientBoundPacket::PlayerDataPacket(PlayerDataPacket {
+                pos: self.position,
+                reach: self.reach,
+            }));
+        }
 
         if let Some(world) = &self.world {
             let mut world_lock = world.lock();
@@ -126,7 +165,7 @@ impl Player {
     }
 
     pub fn name(&self) -> &str {
-        &self.data.name
+        &self.data.profile.name
     }
 
     pub fn client_endpoint(&self) -> Option<&Arc<ClientEndpoint>> {

@@ -25,9 +25,11 @@ use std::io::{Read, Write};
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::{Arc, Weak};
+use abi_stable::pmr::IsAccessible::No;
 use bytebuffer::ByteBuffer;
 use hashbrown::HashSet;
 use log::{debug, error, info, warn};
+use mvengine::game::fs::smartdir::SmartDir;
 use mvutils::bytebuffer::ByteBufferExtras;
 use mvutils::{enum_val, Savable};
 use mvutils::unsafe_utils::Unsafe;
@@ -77,8 +79,9 @@ impl WorldMeta {
 
 pub struct World {
     meta: WorldMeta,
-    directory: PathBuf,
-    chunk_directory: PathBuf,
+    directory: SmartDir,
+    chunk_directory: SmartDir,
+    players_directory: SmartDir,
     loaded_chunks: HashMap<ChunkPos, ChunkType>,
     chunk_manager: ChunkManager,
     generator_pipeline: GeneratePipeline,
@@ -106,35 +109,26 @@ impl World {
         full.push(manager::PATH);
         full.push(dir_name);
 
-        if fs::exists(&full).unwrap_or(false) {
-            let world_dir = full.clone();
-            let mut chunk_dir = full.clone();
-            chunk_dir.push("chunks");
-            fs::create_dir_all(&chunk_dir).expect("Failed to create world directory");
-
-            full.push(META_FILENAME);
-            if !full.exists() {
-                warn!("Meta file is not available, recreating it with a new seed");
-                if let Ok(mut file) = File::create(&full) {
-                    let meta = WorldMeta::new(name, rng().next_u32());
-                    let mut buffer = ByteBuffer::new_le();
-                    meta.save(&mut buffer);
-                    if let Err(e) = file.write_all(buffer.as_bytes()) {
-                        error!("Error when recreating meta file: {e:?}");
-                    }
-                }
+        let directory = SmartDir::new(full);
+        if !directory.exists_yet() {
+            None
+        } else {
+            let chunk_directory = directory.join("chunks");
+            let players_directory = directory.join("players");
+            if !directory.exists_file(META_FILENAME) {
+                let new_seed = rng().next_u32();
+                warn!("Meta file is not available, recreating it with a new seed: {}", new_seed);
+                let meta = WorldMeta::new(name, new_seed);
+                directory.save_object(&meta, META_FILENAME);
             }
-            if let Ok(mut file) = File::open(&full) {
-                let mut buffer = Vec::new();
-                file.read_to_end(&mut buffer).ok()?;
-                let mut buffer = ByteBuffer::from_vec_le(buffer);
-                let meta = WorldMeta::load(&mut buffer).ok()?;
+            if let Some(meta) = directory.read_object::<WorldMeta>(META_FILENAME) {
                 let seed = meta.seed;
 
                 let mut this = Self {
                     meta,
-                    directory: world_dir,
-                    chunk_directory: chunk_dir,
+                    directory,
+                    chunk_directory,
+                    players_directory,
                     loaded_chunks: HashMap::new(),
                     chunk_manager: ChunkManager,
                     generator_pipeline: GeneratePipeline::new(seed),
@@ -155,22 +149,6 @@ impl World {
             } else {
                 None
             }
-        } else {
-            None
-        }
-    }
-
-    pub fn save(&mut self) {
-        let mut full = self.directory.clone();
-        full.push(META_FILENAME);
-        let mut buffer = ByteBuffer::new_le();
-        self.meta.save(&mut buffer);
-        if let Err(e) = fs::write(full, buffer.as_bytes()) {
-            error!("Error writing meta file: {e:?}");
-        }
-        for chunk in self.loaded_chunks.values() {
-            let c = chunk.lock();
-            self.chunk_manager.try_save_chunk(self, &*c);
         }
     }
 
@@ -180,15 +158,18 @@ impl World {
         let mut full = PathBuf::from(appdata);
         full.push(manager::PATH);
         full.push(dir_name);
-        let mut chunk_dir = full.clone();
-        chunk_dir.push("chunks");
-        fs::create_dir_all(&chunk_dir).expect("Failed to create world directory");
+
+        let directory = SmartDir::new(full);
+
+        let chunk_directory = directory.join("chunks");
+        let players_directory = directory.join("players");
 
         Arc::new_cyclic(|weak| {
             Mutex::new(Self {
                 meta: WorldMeta::new(name, seed),
-                directory: full,
-                chunk_directory: chunk_dir,
+                directory,
+                chunk_directory,
+                players_directory,
                 loaded_chunks: HashMap::new(),
                 chunk_manager: ChunkManager {},
                 generator_pipeline: GeneratePipeline::new(seed),
@@ -196,6 +177,14 @@ impl World {
                 arc: weak.clone(),
             })
         }).into()
+    }
+
+    pub fn save(&mut self) {
+        self.directory.save_object(&self.meta, META_FILENAME);
+        for chunk in self.loaded_chunks.values() {
+            let c = chunk.lock();
+            self.chunk_manager.try_save_chunk(self, &*c);
+        }
     }
 
     pub fn get_chunk(&mut self, chunk_pos: ChunkPos) -> ChunkType {
@@ -226,10 +215,8 @@ impl World {
     }
 
     pub fn exists_file(&self, pos: ChunkPos) -> bool {
-        let mut path = self.chunk_directory.clone();
         let filename = format!("c{}_{}.chunk", pos.0, pos.1);
-        path.push(&filename);
-        fs::exists(path).unwrap_or(false)
+        self.chunk_directory.exists_file(&filename)
     }
 
     pub fn unload_chunk(&mut self, pos: ChunkPos) {
@@ -274,19 +261,15 @@ impl World {
     }
 
     pub fn set_tile_at(&mut self, pos: TilePos, tile: TileType, reason: TileSetReason) {
-        let world_arc = self.arc.upgrade().unwrap();
-        let mut world_lock = world_arc.lock();
         let mut tile_lock = tile.write();
         let event = TileSetEvent {
             has_been_cancelled: false,
-            world: &mut *world_lock,
             tile: &mut *tile_lock,
             pos: pos.clone(),
             reason: reason.to_m(),
         };
         let event = Event::TileSetEvent(event);
         let event = ModLoader::dispatch_event(event);
-        drop(world_lock);
         drop(tile_lock);
 
         let event = enum_val!(Event, event, TileSetEvent);
@@ -454,12 +437,16 @@ impl World {
         &self.meta.name
     }
 
-    pub fn directory(&self) -> &PathBuf {
+    pub fn directory(&self) -> &SmartDir {
         &self.directory
     }
 
-    pub fn chunk_directory(&self) -> &PathBuf {
+    pub fn chunk_directory(&self) -> &SmartDir {
         &self.chunk_directory
+    }
+
+    pub fn players_directory(&self) -> &SmartDir {
+        &self.players_directory
     }
 
     pub fn generator(&self) -> &GeneratePipeline {
@@ -514,7 +501,8 @@ impl Debug for TileSetReason {
     }
 }
 
-pub type TileUnit = (f64, f64); //These are in TILES because we dont know the tilesize on server
+pub type SingleTileUnit = f64;
+pub type TileUnit = (SingleTileUnit, SingleTileUnit); //These are in TILES because we dont know the tilesize on server
 pub type PixelUnit = (i32, i32);
 
 pub fn resolve_unit(value: TileUnit, tile_size: i32) -> PixelUnit {

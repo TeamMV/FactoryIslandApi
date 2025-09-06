@@ -11,7 +11,7 @@ use crate::server::packets::player::{OtherPlayerChatPacket, OtherPlayerJoinPacke
 use crate::server::{ClientBoundPacket, ServerBoundPacket};
 use crate::world::{TileSetReason, World, WorldType};
 use hashbrown::HashSet;
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use mvengine::event::EventBus;
 use mvengine::net::server::{ClientEndpoint, ClientId, ServerHandler};
 use mvengine::net::DisconnectReason;
@@ -30,11 +30,14 @@ use abi_stable::traits::IntoReprC;
 use bytebuffer::ByteBuffer;
 use mvutils::bytebuffer::ByteBufferExtras;
 use mvutils::clock::Clock;
+use mvutils::save::Savable;
 use mvutils::unsafe_utils::Unsafe;
 use parking_lot::RwLock;
+use crate::ingredients::IngredientKind;
 use crate::mods::modsdk::events::Event;
 use crate::mods::modsdk::events::player::{PlayerJoinEvent, PlayerLeaveEvent, PlayerMoveEvent};
 use crate::mods::modsdk::{MPlayerData, MTileUnit};
+use crate::registry::ingredients::INGREDIENT_REGISTRY;
 use crate::registry::tiles::TILE_REGISTRY;
 use crate::server::packets::world::TileSetPacket;
 use crate::world::chunk::ToClientObject;
@@ -48,6 +51,7 @@ pub mod server;
 pub mod mods;
 pub mod command;
 pub mod registry;
+pub mod ingredients;
 
 lazy! {
     pub(crate) static PLAYERS: RwLock<HashMap<ClientId, PlayerType, U64IdentityHasher>> = RwLock::new(HashMap::with_hasher(U64IdentityHasher::default()));
@@ -98,11 +102,13 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
         
         let terrain_tiles = registry::terrain::register_all();
         let tiles = registry::tiles::register_all();
+        let ingredients = registry::ingredients::register_all();
         command::register_commands();
         
         let objects = GameObjects {
             terrain: terrain_tiles,
             tiles,
+            ingredients
         };
 
         ModLoader::load(&mod_dir, objects.clone());
@@ -119,6 +125,7 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
     }
 
     fn on_client_connect(&mut self, client: Arc<ClientEndpoint>) {
+        debug!("client connect call");
         let mut player_data = Vec::new();
         let mut players = PLAYERS.write();
         for (client_id, player) in players.iter() {
@@ -129,8 +136,8 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
             };
             player_data.push(data);
         }
-        let mut tiles = Vec::with_capacity(TILE_REGISTRY.len());
-        for id in 0..TILE_REGISTRY.len() {
+        let mut tiles = Vec::with_capacity(TILE_REGISTRY.len() - 1);
+        for id in 1..TILE_REGISTRY.len() {
             if let Some(object) = TILE_REGISTRY.create_object(id) {
                 tiles.push(TileKind {
                     id,
@@ -138,10 +145,19 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
                 });
             }
         }
+        let mut ingredients = Vec::with_capacity(INGREDIENT_REGISTRY.len() - 1);
+        for id in 1..INGREDIENT_REGISTRY.len() {
+            if let Some(object) = INGREDIENT_REGISTRY.create_object(id) {
+                ingredients.push(IngredientKind {
+                    id,
+                });
+            }
+        }
         client.send(ClientBoundPacket::ServerState(ServerStatePacket {
             players: player_data,
             mods: ModLoader::res_mod_ids(),
             tiles,
+            ingredients,
             client_id: client.id(),
         }));
         let id = client.id();
@@ -155,8 +171,8 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
     fn on_client_disconnect(&mut self, client: Arc<ClientEndpoint>, reason: DisconnectReason) {
         let mut players = PLAYERS.write();
         if let Some(player) = players.get(&client.id()).cloned() {
-            let lock = player.lock();
-            let name = lock.data.name.clone().into_c();
+            let mut lock = player.lock();
+            let name = lock.data.profile.name.clone().into_c();
             let pos = MTileUnit::from_normal(lock.position);
             let event = Event::PlayerLeaveEvent(PlayerLeaveEvent {
                 player: client.id(),
@@ -167,7 +183,6 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
             });
             ModLoader::dispatch_event(event);
 
-            let mut lock = player.lock();
             lock.on_disconnect();
             drop(lock);
             players.remove(&client.id());
@@ -209,9 +224,9 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
             }
             ServerBoundPacket::PlayerMove(packet) => {
                 if let Some(player) = players.get(&client.id()) {
-                    let pos = player.lock().position;
+                    let pos = packet.pos;
                     let position = MTileUnit::from_normal(pos);
-                    let mut event = Event::PlayerMoveEvent(PlayerMoveEvent {
+                    let event = Event::PlayerMoveEvent(PlayerMoveEvent {
                         has_been_cancelled: false,
                         player: client.id(),
                         position,
@@ -242,17 +257,24 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
             }
             ServerBoundPacket::TileSet(packet) => {
                 if let Some(mut tile) = TILE_REGISTRY.create_object(packet.tile_id) {
+                    tile.info.orientation = packet.orientation;
                     if let Some((state)) = &mut tile.info.state {
-                        let mut loader = ByteBuffer::from_vec_le(packet.tile_state.clone());
-                        if let Err(e) = state.load_from_client(&mut loader) {
-                            error!("Error when loading tile state from client: {e}");
+                        if !packet.tile_state.is_empty() {
+                            let mut loader = ByteBuffer::from_vec_le(packet.tile_state.clone());
+                            if let Err(e) = state.load_from_client(&mut loader) {
+                                warn!("Error when loading tile state from client: {e}");
+                            }
                         }
                     }
                     let cloned = self.world.clone();
                     let mut world_lock = cloned.lock();
                     let player = players.get(&client.id()).cloned();
                     if let Some(player) = player {
-                        let reason = TileSetReason::Player(player.lock().data.clone());
+                        let data = {
+                            let l = player.lock();
+                            l.data.clone()
+                        };
+                        let reason = TileSetReason::Player(data);
 
                         let to_client = ToClientObject {
                             id: packet.tile_id as u16,
@@ -261,8 +283,10 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
                             state: packet.tile_state.clone(),
                         };
 
+                        drop(players);
                         world_lock.set_tile_at(packet.pos.clone(), tile.to_type(), reason.clone());
-                        
+                        let players = PLAYERS.read();
+
                         // Dont filter out the current id as the tile only gets set on the client if the server says its okay. just to avoid desync
                         for (_, other_player) in players.iter() {
                             let lock = other_player.lock();

@@ -28,7 +28,6 @@ use crate::mods::modsdk::events::{Event, EventHandler, EventResponse};
 use crate::mods::modsdk::ModData;
 use crate::registry::{GameObjects, Registry};
 use crate::registry::terrain::TerrainTiles;
-use crate::world::tiles::resources::ClientTileRes;
 use crate::world::tiles::terrain::TerrainTile;
 use crate::world::tiles::tiles::Tile;
 
