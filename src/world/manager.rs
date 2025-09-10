@@ -9,8 +9,8 @@ use std::fs::File;
 use std::io::{Read, Write};
 
 use lz4_flex::{compress_prepend_size, decompress_size_prepended};
+use mvengine::utils::savers::SaveArc;
 use parking_lot::Mutex;
-use crate::mods::ModLoader;
 
 pub const PATH: &str = ".factoryisland/worlds";
 
@@ -31,13 +31,10 @@ impl ChunkManager {
 
                 debug!("loaded chunk {chunk_pos:?}");
 
-                let chunk = Chunk::load(&mut buffer).ok()?;
-                let arced = ChunkType::new(Mutex::new(chunk));
-                Chunk::generate_terrain(&arced, world.generator(), world.objects());
-                let mut lock = arced.lock();
-                lock.terrain.apply_modifications();
-                drop(lock);
-                Some(arced)
+                let mut chunk = Chunk::load(&mut buffer).ok()?;
+                chunk.generate_terrain(world.generator(), world.objects());
+                chunk.terrain.apply_modifications();
+                Some(SaveArc::new(Mutex::new(chunk)))
             } else {
                 error!("Error decompressing chunk file");
                 None

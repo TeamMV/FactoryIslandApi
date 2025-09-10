@@ -21,7 +21,6 @@ pub struct PlayerData {
 
 #[derive(Clone, Savable)]
 pub struct ServerStatePacket {
-    pub mods: Vec<String>,
     pub players: Vec<PlayerData>,
     pub tiles: Vec<TileKind>,
     pub ingredients: Vec<IngredientKind>,

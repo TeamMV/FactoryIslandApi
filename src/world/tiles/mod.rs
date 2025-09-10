@@ -1,14 +1,17 @@
+use bytebuffer::ByteBuffer;
 use mvengine::rendering::RenderContext;
 use mvengine::ui::context::UiResources;
+use mvutils::bytebuffer::ByteBufferExtras;
 use mvutils::Savable;
+use crate::world::chunk::ToClientObject;
+use crate::world::tiles::tiles::TileType;
 
 pub mod pos;
 pub mod terrain;
 pub mod tiles;
 pub mod update;
 pub mod implementations;
-pub mod utils;
-pub mod newapi;
+pub mod special;
 
 #[derive(Savable, Clone, Copy, Debug)]
 #[repr(C)]
@@ -27,5 +30,24 @@ impl Orientation {
             Orientation::South => [uv[2], uv[3], uv[0], uv[1]],
             Orientation::West => [uv[1], uv[2], uv[3], uv[0]],
         }
+    }
+}
+
+pub fn tile_to_client(tile_type: &TileType) -> ToClientObject {
+    let lock = tile_type.read();
+
+    let state = if let Some(s) = &lock.info.state {
+        let mut buf = ByteBuffer::new_le();
+        s.save_for_client(&mut buf);
+        buf.into_vec()
+    } else {
+        vec![]
+    };
+    
+    ToClientObject {
+        id: lock.id as u16,
+        source: lock.info.source.clone(),
+        orientation: lock.info.orientation,
+        state,
     }
 }

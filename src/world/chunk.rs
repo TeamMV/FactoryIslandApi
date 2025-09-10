@@ -1,20 +1,15 @@
-use crate::mods::modsdk::events::world::BeforeChunkGenerateEvent;
-use crate::mods::modsdk::events::Event;
-use crate::mods::ModLoader;
+use crate::multitile::MultiTilePlacement;
 use crate::registry::terrain::TERRAIN_REGISTRY;
 use crate::registry::{GameObjects, ObjectSource};
 use crate::world::generate::ChunkGenerator;
 use crate::world::tiles::pos::TilePos;
 use crate::world::tiles::tiles::TileType;
 use crate::world::tiles::Orientation;
-use crate::world::{ChunkPos, ChunkType, CHUNK_SIZE};
+use crate::world::{tiles, ChunkPos, CHUNK_SIZE};
 use abi_stable::std_types::{RHashMap, Tuple2};
-use bytebuffer::ByteBuffer;
 use mvutils::save::custom::ignore_save;
 use mvutils::save::{Loader, Savable};
-use mvutils::{enum_val, Savable};
-use mvutils::bytebuffer::ByteBufferExtras;
-use crate::multitile::MultiTilePlacement;
+use mvutils::Savable;
 
 pub const CHUNK_TILES: usize = CHUNK_SIZE as usize * CHUNK_SIZE as usize;
 
@@ -128,20 +123,7 @@ impl Chunk {
         let tiles = (0..CHUNK_TILES)
             .map(|i| {
                 self.tiles[i].as_ref().map(|t| {
-                    let rw = t.read();
-                    let state = if let Some(s) = &rw.info.state {
-                        let mut buf = ByteBuffer::new_le();
-                        s.save_for_client(&mut buf);
-                        buf.into_vec()
-                    } else {
-                        vec![]
-                    };
-                    ToClientObject {
-                        id: rw.id as u16,
-                        orientation: rw.info.orientation,
-                        source: rw.info.source.clone(),
-                        state
-                    }
+                    tiles::tile_to_client(t)
                 })
             })
             .collect::<Vec<_>>();
@@ -153,36 +135,12 @@ impl Chunk {
         }
     }
     
-    pub fn generate(this: &ChunkType, generator: &impl ChunkGenerator, objects: &GameObjects) {
-        let mut lock = this.lock();
-        let pos = lock.position;
-        let event = BeforeChunkGenerateEvent {
-            has_been_cancelled: false,
-            pos,
-            chunk: &mut *lock,
-        };
-        let event = ModLoader::dispatch_event(Event::BeforeChunkGenerateEvent(event));
-
-        let mut event = enum_val!(Event, event, BeforeChunkGenerateEvent);
-        if !event.has_been_cancelled {
-            generator.generate(&mut lock, objects);
-        }
+    pub fn generate(&mut self, generator: &impl ChunkGenerator, objects: &GameObjects) {
+        generator.generate(self, objects);
     }
 
-    pub fn generate_terrain(this: &ChunkType, generator: &impl ChunkGenerator, objects: &GameObjects) {
-        let mut lock = this.lock();
-        let pos = lock.position;
-        let event = BeforeChunkGenerateEvent {
-            has_been_cancelled: false,
-            pos,
-            chunk: &mut *lock,
-        };
-        let event = ModLoader::dispatch_event(Event::BeforeChunkGenerateEvent(event));
-
-        let mut event = enum_val!(Event, event, BeforeChunkGenerateEvent);
-        if !event.has_been_cancelled {
-            generator.generate_terrain(&mut lock, objects);
-        }
+    pub fn generate_terrain(&mut self, generator: &impl ChunkGenerator, objects: &GameObjects) {
+        generator.generate_terrain(self, objects);
     }
 }
 

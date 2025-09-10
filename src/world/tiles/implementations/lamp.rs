@@ -1,112 +1,69 @@
-use std::alloc::Layout;
-use std::{alloc, ptr};
-use abi_stable::std_types::RVec;
-use log::debug;
-use mvutils::utils::TetrahedronOp;
-use crate::{p, leak, rvec_load, rvec_save, ptr_invoke_clone};
-use crate::mods::modsdk::MOpt;
-use crate::world::tiles::tiles::{ObjControl, ObjControlTrait, TileState, TileStateTrait};
-use crate::world::tiles::update::{This, UpdateHandler, UpdateTile, UpdateTileTrait};
+use bytebuffer::ByteBuffer;
+use mvutils::save::Savable;
+use crate::world::tiles::special::state::StateTile;
+use crate::world::tiles::special::update::{HasChanged, UpdateTile};
+use crate::world::tiles::update::UpdateHandler;
 
+#[derive(Clone)]
 pub struct LampTile {
-    handler: *mut UpdateHandler,
-    on: bool
+    update_handler: UpdateHandler,
 }
 
 impl LampTile {
     pub fn new() -> Self {
         Self {
-            handler: leak!(UpdateHandler::new()),
-            on: false,
+            update_handler: UpdateHandler::new(),
         }
     }
 }
 
 impl UpdateTile for LampTile {
-    fn create_update_trait() -> UpdateTileTrait {
-        UpdateTileTrait {
-            get_handler,
-            on_update_receive,
-        }
+    fn update_handler(&mut self) -> &mut UpdateHandler {
+        &mut self.update_handler
+    }
+
+    fn receive_update(&mut self) -> HasChanged {
+        false
+    }
+
+    fn box_clone(&self) -> Box<dyn UpdateTile> {
+        Box::new(self.clone())
     }
 }
 
-impl TileState for LampTile {
-    fn create_state_trait() -> TileStateTrait {
-        TileStateTrait {
-            save_to_vec,
-            load_into_self,
-            client_state,
-            apply_client_state,
-        }
+#[derive(Clone)]
+pub struct LampState {
+    on: bool,
+}
+
+impl StateTile for LampState {
+    fn save(&self, saver: &mut ByteBuffer) {
+        self.on.save(saver);
+    }
+
+    fn load_into(&mut self, loader: &mut ByteBuffer) -> Result<(), String> {
+        self.on = bool::load(loader)?;
+        Ok(())
+    }
+
+    fn save_for_client(&self, saver: &mut ByteBuffer) {
+        self.on.save(saver);
+    }
+
+    fn load_from_client(&mut self, loader: &mut ByteBuffer) -> Result<(), String> {
+        self.on = bool::load(loader)?;
+        Ok(())
+    }
+
+    fn box_clone(&self) -> Box<dyn StateTile> {
+        Box::new(self.clone())
     }
 }
 
-impl ObjControl for LampTile {
-    fn create_oc_trait() -> ObjControlTrait {
-        ObjControlTrait {
-            create_copy,
-            free,
-        }
-    }
-}
-
-pub fn get_handler(this: This) -> *mut UpdateHandler {
-    let tile = p!(this as LampTile);
-    tile.handler
-}
-
-pub fn on_update_receive(this: This) -> bool {
-    false
-}
-
-pub fn save_to_vec(this: This) -> RVec<u8> {
-    let tile = p!(this as LampTile);
-    rvec_save!(tile => on,)
-}
-
-pub fn load_into_self(vec: RVec<u8>, this: This) -> MOpt<()> {
-    let tile = p!(this as LampTile);
-    rvec_load!(vec for tile => {
-        on: bool,
-    });
-    MOpt::Some(())
-}
-
-pub fn client_state(this: This) -> usize {
-    let tile = p!(this as LampTile);
-    tile.on.yn(1, 0)
-}
-
-pub fn apply_client_state(this: This, state: usize) {
-    let tile = p!(this as LampTile);
-    tile.on = state == 1;
-}
-
-pub fn create_copy(this: This) -> This {
-    let tile = p!(this as LampTile);
-    let handler = ptr_invoke_clone!(tile.handler);
-    let new = LampTile {
-        handler,
-        on: tile.on,
-    };
-    let p = leak!(new);
-    p!(p)
-}
-
-pub unsafe fn free(this: This) {
-    let tile = p!(this as LampTile);
-    let tile_lay = Layout::for_value(tile);
-    ptr::drop_in_place(this as *mut LampTile);
-    alloc::dealloc(this as *mut u8, tile_lay);
-}
-
-impl Drop for LampTile {
-    fn drop(&mut self) {
-        unsafe {
-            let handler_lay = Layout::for_value(&*self.handler);
-            ptr::drop_in_place(self.handler);
-            alloc::dealloc(self.handler as *mut u8, handler_lay);
+impl LampState {
+    pub fn new() -> Self {
+        Self {
+            on: false,
         }
     }
 }

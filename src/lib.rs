@@ -2,7 +2,6 @@
 #![feature(try_trait_v2)]
 
 use crate::command::{CommandProcessor, CommandSender, COMMAND_PROCESSOR};
-use crate::mods::{ModLoader, DEFAULT_MOD_DIR};
 use crate::player::{Player, PlayerType};
 use crate::registry::terrain::TerrainTiles;
 use crate::registry::GameObjects;
@@ -34,9 +33,7 @@ use mvutils::save::Savable;
 use mvutils::unsafe_utils::Unsafe;
 use parking_lot::RwLock;
 use crate::ingredients::IngredientKind;
-use crate::mods::modsdk::events::Event;
-use crate::mods::modsdk::events::player::{PlayerJoinEvent, PlayerLeaveEvent, PlayerMoveEvent};
-use crate::mods::modsdk::{MPlayerData, MTileUnit};
+use crate::packethandler::PacketHandler;
 use crate::registry::ingredients::INGREDIENT_REGISTRY;
 use crate::registry::tiles::TILE_REGISTRY;
 use crate::server::packets::world::TileSetPacket;
@@ -48,11 +45,11 @@ pub mod world;
 pub mod settings;
 pub mod player;
 pub mod server;
-pub mod mods;
 pub mod command;
 pub mod registry;
 pub mod ingredients;
 pub mod multitile;
+mod packethandler;
 
 lazy! {
     pub(crate) static PLAYERS: RwLock<HashMap<ClientId, PlayerType, U64IdentityHasher>> = RwLock::new(HashMap::with_hasher(U64IdentityHasher::default()));
@@ -92,7 +89,6 @@ impl FactoryIsland {
         world.tick();
         
         drop(world);
-        ModLoader::dispatch_event(Event::ServerTickEvent);
     }
 
     pub fn on_command(&mut self, command: String, player: Option<PlayerData>) {
@@ -100,8 +96,6 @@ impl FactoryIsland {
     }
 
     pub fn stop(&mut self) {
-        ModLoader::dispatch_event(Event::GameEndEvent);
-        ModLoader::unload();
         exit(0);
     }
 }
@@ -109,7 +103,6 @@ impl FactoryIsland {
 impl ServerHandler<ServerBoundPacket> for FactoryIsland {
     fn on_server_start(port: u16) -> Self {
         let args = ParsedArgs::parse(env::args());
-        let mod_dir = args.try_get_as("-mods").unwrap_or(DEFAULT_MOD_DIR.clone());
         
         let terrain_tiles = registry::terrain::register_all();
         let tiles = registry::tiles::register_all();
@@ -123,9 +116,6 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
             ingredients,
             multitiles,
         };
-
-        ModLoader::load(&mod_dir, objects.clone());
-        ModLoader::dispatch_event(Event::GameStartEvent);
 
         let world = World::get_main(objects.clone());
 
@@ -168,16 +158,12 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
         }
         client.send(ClientBoundPacket::ServerState(ServerStatePacket {
             players: player_data,
-            mods: ModLoader::res_mod_ids(),
             tiles,
             ingredients,
             client_id: client.id(),
         }));
         let id = client.id();
         let player = Player::new(client, self.world.clone());
-        ModLoader::dispatch_event(Event::PlayerJoinEvent(PlayerJoinEvent {
-            player: id,
-        }));
         players.insert(id, player);
     }
 
@@ -185,16 +171,6 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
         let mut players = PLAYERS.write();
         if let Some(player) = players.get(&client.id()).cloned() {
             let mut lock = player.lock();
-            let name = lock.data.profile.name.clone().into_c();
-            let pos = MTileUnit::from_normal(lock.position);
-            let event = Event::PlayerLeaveEvent(PlayerLeaveEvent {
-                player: client.id(),
-                data: MPlayerData {
-                    name,
-                    pos,
-                },
-            });
-            ModLoader::dispatch_event(event);
 
             lock.on_disconnect();
             drop(lock);
@@ -213,134 +189,11 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
     }
 
     fn on_packet(&mut self, client: Arc<ClientEndpoint>, packet: ServerBoundPacket) {
-        let mut players = PLAYERS.write();
-        match packet {
-            ServerBoundPacket::ClientData(packet) => {
-                debug!("Client data packet arrived");
-                if let Some(player) = players.get(&client.id()) {
-                    let mut lock = player.lock();
-                    lock.apply_data(packet.clone());
-
-                    let id = client.id();
-                    debug!("starting client join message");
-                    for (_, other_player) in players.iter().filter(|(p, _)| **p != id) {
-                        let lock = other_player.lock();
-                        if let Some(endpoint) = lock.client_endpoint() {
-                            endpoint.send(ClientBoundPacket::OtherPlayerJoin(OtherPlayerJoinPacket {
-                                client_id: id,
-                                client_data: packet.clone()
-                            }));
-                        }
-                    }
-                    debug!("finished client join message");
-                }
-            }
-            ServerBoundPacket::PlayerMove(packet) => {
-                if let Some(player) = players.get(&client.id()) {
-                    let pos = packet.pos;
-                    let position = MTileUnit::from_normal(pos);
-                    let event = Event::PlayerMoveEvent(PlayerMoveEvent {
-                        has_been_cancelled: false,
-                        player: client.id(),
-                        position,
-                    });
-                    let event = ModLoader::dispatch_event(event);
-
-                    let event = enum_val!(Event, event, PlayerMoveEvent);
-                    let pos = event.position.to_normal();
-                    if !event.has_been_cancelled {
-                        let mut lock = player.lock();
-                        lock.move_to(pos);
-                        drop(lock);
-                    } else {
-                        client.send(ClientBoundPacket::PlayerMove(PlayerMovePacket {
-                            pos,
-                        }));
-                    }
-                    for (_, other_player) in players.iter().filter(|(p, _)| **p != client.id()) {
-                        let lock = other_player.lock();
-                        if let Some(endpoint) = lock.client_endpoint() {
-                            endpoint.send(ClientBoundPacket::OtherPlayerMove(OtherPlayerMovePacket {
-                                client_id: client.id(),
-                                pos,
-                            }));
-                        }
-                    }
-                }
-            }
-            ServerBoundPacket::TileSet(packet) => {
-                if let Some(mut tile) = TILE_REGISTRY.create_object(packet.tile_id) {
-                    tile.info.orientation = packet.orientation;
-                    if let Some((state)) = &mut tile.info.state {
-                        if !packet.tile_state.is_empty() {
-                            let mut loader = ByteBuffer::from_vec_le(packet.tile_state.clone());
-                            if let Err(e) = state.load_from_client(&mut loader) {
-                                warn!("Error when loading tile state from client: {e}");
-                            }
-                        }
-                    }
-                    let cloned = self.world.clone();
-                    let mut world_lock = cloned.lock();
-                    let player = players.get(&client.id()).cloned();
-                    if let Some(player) = player {
-                        let data = {
-                            let l = player.lock();
-                            l.data.clone()
-                        };
-                        let reason = TileSetReason::Player(data);
-
-                        let to_client = ToClientObject {
-                            id: packet.tile_id as u16,
-                            source: tile.info.source.clone(),
-                            orientation: packet.orientation,
-                            state: packet.tile_state.clone(),
-                        };
-
-                        drop(players);
-                        world_lock.set_tile_at(packet.pos.clone(), tile.to_type(), reason.clone());
-
-                        broadcast_all_players(ClientBoundPacket::TileSet(TileSetPacket {
-                            pos: packet.pos.clone(),
-                            tile: to_client.clone(),
-                            reason: reason.clone(),
-                        }));
-                    }
-                } else {
-                    info!("Received Invalid tile from client with id: {}", packet.tile_id);
-                };
-            },
-            ServerBoundPacket::PlayerChat(packet) => {
-                if let Some(player) = players.get(&client.id()) {
-                    let lock = player.lock();
-                    let client_data = lock.data.clone();
-                    drop(lock);
-                    let data = PlayerData {
-                        client_id: client.id(),
-                        data: client_data,
-                    };
-                    if packet.message.chars().next() == Some('/') {
-                        let command = packet.message[1..].trim().to_string();
-                        self.on_command(command, Some(data));
-                    } else {
-                        for (_, other_player) in players.iter() {
-                            let lock = other_player.lock();
-                            if let Some(endpoint) = lock.client_endpoint() {
-                                endpoint.send(ClientBoundPacket::OtherPlayerChat(OtherPlayerChatPacket {
-                                    player: data.clone(),
-                                    message: packet.message.clone(),
-                                }));
-                            }
-                        }
-                    }
-                }
-            }
-            ServerBoundPacket::RequestReload => {
-                if let Some(player) = players.get(&client.id()) {
-                    let mut lock = player.lock();
-                    lock.loaded_chunks.clear();
-                    let rdst = lock.data.render_distance;
-                    lock.after_move(rdst);
-                }
+        let mut world_lock = self.world.lock();
+        if let Some(packet) = world_lock.check_packet(packet, &client) {
+            drop(world_lock);
+            if let Some(_) = PacketHandler::check_packet(packet, &client, self) {
+                warn!("Couldnt handle packet!");
             }
         }
     }

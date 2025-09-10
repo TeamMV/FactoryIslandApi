@@ -1,11 +1,8 @@
-use crate::mods::modsdk::MOpt;
 use crate::registry::tiles::TILE_REGISTRY;
 use crate::registry::{ObjectSource, Registerable};
-use crate::world::tiles::newapi::state::StateTile;
-use crate::world::tiles::newapi::update::UpdateTile;
-use crate::world::tiles::update::This;
+use crate::world::tiles::special::state::StateTile;
+use crate::world::tiles::special::update::UpdateTile;
 use crate::world::tiles::Orientation;
-use abi_stable::std_types::RVec;
 use mvengine::utils::savers::SaveArc;
 use mvutils::save::{Loader, Savable, Saver};
 use parking_lot::RwLock;
@@ -173,28 +170,4 @@ impl TileInfo {
             state: Some(Box::new(state)),
         }
     }
-}
-
-#[derive(Clone)]
-#[repr(C)]
-pub struct TileStateTrait {
-    pub save_to_vec: fn(This) -> RVec<u8>,
-    pub load_into_self: fn(RVec<u8>, This) -> MOpt<()>,
-    pub client_state: fn(This) -> usize,
-    pub apply_client_state: fn(This, usize),
-}
-
-pub trait TileState {
-    fn create_state_trait() -> TileStateTrait;
-}
-
-#[derive(Clone)]
-#[repr(C)]
-pub struct ObjControlTrait {
-    pub create_copy: fn(This) -> This,
-    pub free: unsafe fn(This)
-}
-
-pub trait ObjControl {
-    fn create_oc_trait() -> ObjControlTrait;
 }

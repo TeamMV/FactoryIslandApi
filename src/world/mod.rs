@@ -30,20 +30,18 @@ use bytebuffer::ByteBuffer;
 use hashbrown::HashSet;
 use log::{debug, error, info, warn};
 use mvengine::game::fs::smartdir::SmartDir;
+use mvengine::net::server::ClientEndpoint;
 use mvutils::bytebuffer::ByteBufferExtras;
 use mvutils::{enum_val, Savable};
 use mvutils::unsafe_utils::Unsafe;
 use crate::{broadcast_all_players, registry, FactoryIsland, PLAYERS};
-use crate::mods::ModLoader;
-use crate::mods::modsdk::events::Event;
-use crate::mods::modsdk::events::world::{TerrainSetEvent, TileSetEvent};
-use crate::mods::modsdk::player::MPlayer;
-use crate::mods::modsdk::world::MTileSetReason;
 use crate::multitile::MultiTilePlacement;
 use crate::registry::GameObjects;
 use crate::registry::multitiles::MULTI_REGISTRY;
-use crate::server::ClientBoundPacket;
-use crate::server::packets::common::ClientDataPacket;
+use crate::registry::tiles::TILE_REGISTRY;
+use crate::server::{ClientBoundPacket, ServerBoundPacket};
+use crate::server::packets::common::{ClientDataPacket, PlayerData};
+use crate::server::packets::player::{OtherPlayerChatPacket, OtherPlayerJoinPacket, OtherPlayerMovePacket};
 use crate::server::packets::world::{MultiTileDestroyedPacket, MultiTilePlacedPacket, TerrainSetPacket, TileSetPacket};
 use crate::world::tiles::terrain::{WorldTerrain, TerrainTile};
 use crate::world::tiles::tiles::{InnerTile, TileType};
@@ -207,9 +205,11 @@ impl World {
             let chunk = SaveArc::new(Mutex::new(chunk));
             //generate new chunk if loading fails
             debug!("Generating new chunk at {chunk_pos:?}");
-            Chunk::generate_terrain(&chunk, &self.generator_pipeline, &self.objects);
-            Chunk::generate(&chunk, &self.generator_pipeline, &self.objects);
-            let pos = chunk.lock().position;
+            let mut chunk_lock = chunk.lock();
+            chunk_lock.generate_terrain(&self.generator_pipeline, &self.objects);
+            chunk_lock.generate(&self.generator_pipeline, &self.objects);
+            let pos = chunk_lock.position;
+            drop(chunk_lock);
             self.loaded_chunks.insert(pos, chunk.clone());
             chunk
         }
@@ -282,111 +282,89 @@ impl World {
     }
 
     pub fn set_tile_at(&mut self, pos: TilePos, tile: TileType, reason: TileSetReason) {
-        let mut tile_lock = tile.write();
-        let event = TileSetEvent {
-            has_been_cancelled: false,
-            tile: &mut *tile_lock,
+        let chunk = self.get_chunk(pos.chunk_pos);
+        let mut lock = chunk.lock();
+        lock.tiles[Chunk::get_index(&pos)] = Some(tile.clone());
+
+        let client_tile = tiles::tile_to_client(&tile);
+
+        broadcast_all_players(ClientBoundPacket::TileSet(TileSetPacket {
             pos: pos.clone(),
-            reason: reason.to_m(),
-        };
-        let event = Event::TileSetEvent(event);
-        let event = ModLoader::dispatch_event(event);
-        drop(tile_lock);
+            tile: client_tile,
+            reason,
+        }));
+        drop(lock);
 
-        let event = enum_val!(Event, event, TileSetEvent);
+        let rw = tile.read();
 
-        if !event.has_been_cancelled {
-            let chunk = self.get_chunk(pos.fi_chunk_pos());
+        let mut remove = None;
+        for chunk_pos in pos.multitile_chunk_maybe_positions() {
+            let chunk = self.get_chunk(chunk_pos);
             let mut lock = chunk.lock();
-            lock.tiles[Chunk::get_index(&pos)] = Some(tile.clone());
-            drop(lock);
-
-            let rw = tile.read();
-
-            let mut remove = None;
-            for chunk_pos in pos.multitile_chunk_maybe_positions() {
-                let chunk = self.get_chunk(chunk_pos);
-                let mut lock = chunk.lock();
-                for i in 0..lock.multitiles.len() {
-                    if lock.multitiles[i].includes(&pos) {
-                        remove = Some(i);
-                        break;
-                    }
-                }
-                if let Some(i) = remove {
-                    let multiblock = lock.multitiles.remove(i);
-                    let packet = ClientBoundPacket::MultiTileDestroyedPacket(MultiTileDestroyedPacket {
-                        placement_id: multiblock.uuid,
-                        chunk_pos: multiblock.pos.fi_chunk_pos(),
-                    });
-                    broadcast_all_players(packet);
+            for i in 0..lock.multitiles.len() {
+                if lock.multitiles[i].includes(&pos) {
+                    remove = Some(i);
                     break;
                 }
             }
-
-            //check multiblocks
-            let mut placement = None;
-            for mt_id in 0..MULTI_REGISTRY.len() {
-                if let Some(multi) = MULTI_REGISTRY.reference_object(mt_id) {
-                    if let Some(p) = multi.check_completion(self, pos.clone(), rw.id as u16) {
-                        placement = Some(p);
-                        break;
-                    }
-                }
-            }
-
-            if let Some(placement) = placement {
-                let chunk = self.get_chunk(placement.pos.fi_chunk_pos());
-                let mut lock = chunk.lock();
-                lock.multitiles.push(placement.clone());
-                drop(lock);
-                let packet = ClientBoundPacket::MultiTilePlacedPacket(MultiTilePlacedPacket {
-                    placement,
+            if let Some(i) = remove {
+                let multiblock = lock.multitiles.remove(i);
+                let packet = ClientBoundPacket::MultiTileDestroyedPacket(MultiTileDestroyedPacket {
+                    placement_id: multiblock.uuid,
+                    chunk_pos: multiblock.pos.chunk_pos,
                 });
                 broadcast_all_players(packet);
+                break;
             }
-
-
-            let state = if let Some(s) = &rw.info.state {
-                let mut buf = ByteBuffer::new_le();
-                s.save_for_client(&mut buf);
-                buf.into_vec()
-            } else {
-                vec![]
-            };
-            let client_obj = ToClientObject {
-                id: rw.id as u16,
-                orientation: rw.info.orientation,
-                source: rw.info.source.clone(),
-                state
-            };
-
-            broadcast_all_players(ClientBoundPacket::TileSet(TileSetPacket {
-                pos: pos.clone(),
-                tile: client_obj.clone(),
-                reason: TileSetReason::DontCare,
-            }));
         }
+
+        //check multiblocks
+        let mut placement = None;
+        for mt_id in 0..MULTI_REGISTRY.len() {
+            if let Some(multi) = MULTI_REGISTRY.reference_object(mt_id) {
+                if let Some(p) = multi.check_completion(self, pos.clone(), rw.id as u16) {
+                    placement = Some(p);
+                    break;
+                }
+            }
+        }
+
+        if let Some(placement) = placement {
+            let chunk = self.get_chunk(placement.pos.chunk_pos);
+            let mut lock = chunk.lock();
+            lock.multitiles.push(placement.clone());
+            drop(lock);
+            let packet = ClientBoundPacket::MultiTilePlacedPacket(MultiTilePlacedPacket {
+                placement,
+            });
+            broadcast_all_players(packet);
+        }
+
+
+        let state = if let Some(s) = &rw.info.state {
+            let mut buf = ByteBuffer::new_le();
+            s.save_for_client(&mut buf);
+            buf.into_vec()
+        } else {
+            vec![]
+        };
+        let client_obj = ToClientObject {
+            id: rw.id as u16,
+            orientation: rw.info.orientation,
+            source: rw.info.source.clone(),
+            state
+        };
+
+        broadcast_all_players(ClientBoundPacket::TileSet(TileSetPacket {
+            pos: pos.clone(),
+            tile: client_obj.clone(),
+            reason: TileSetReason::DontCare,
+        }));
     }
 
     pub fn set_terrain_at(&mut self, pos: TilePos, terrain: WorldTerrain, reason: TileSetReason) {
         if let Some(template) = registry::terrain::TERRAIN_REGISTRY.create_object(terrain.id as usize) {
-            let world_arc = self.arc.upgrade().unwrap();
-            let mut world_lock = world_arc.lock();
-            let event = TerrainSetEvent {
-                has_been_cancelled: false,
-                world: &mut *world_lock,
-                terrain,
-                pos: pos.clone(),
-                reason: reason.to_m(),
-            };
-            let event = Event::TerrainSetEvent(event);
-            let event = ModLoader::dispatch_event(event);
-            drop(world_lock);
-            let event = enum_val!(Event, event, TerrainSetEvent);
-            let terrain = event.terrain;
-
-            let chunk = self.get_chunk(pos.fi_chunk_pos());
+            let chunk = self.get_chunk(pos.chunk_pos);
             let mut chunk_lock = chunk.lock();
             let index = Chunk::get_index(&pos);
             let id = terrain.id;
@@ -410,7 +388,7 @@ impl World {
     }
     
     pub fn send_update(&mut self, pos: TilePos) {
-        let chunk_pos = pos.fi_chunk_pos();
+        let chunk_pos = pos.chunk_pos;
         if self.is_loaded(chunk_pos) {
             let chunk = self.get_chunk(chunk_pos);
             let lock = chunk.lock();
@@ -481,6 +459,41 @@ impl World {
         }
     }
 
+    pub fn check_packet(&mut self, packet: ServerBoundPacket, client: &Arc<ClientEndpoint>) -> Option<ServerBoundPacket> {
+        let mut players = PLAYERS.write();
+        match packet {
+            ServerBoundPacket::TileSet(packet) => {
+                if let Some(mut tile) = TILE_REGISTRY.create_object(packet.tile_id) {
+                    tile.info.orientation = packet.orientation;
+                    if let Some((state)) = &mut tile.info.state {
+                        if !packet.tile_state.is_empty() {
+                            let mut loader = ByteBuffer::from_vec_le(packet.tile_state.clone());
+                            if let Err(e) = state.load_from_client(&mut loader) {
+                                warn!("Error when loading tile state from client: {e}");
+                            }
+                        }
+                    }
+                    let player = players.get(&client.id()).cloned();
+                    if let Some(player) = player {
+                        let data = {
+                            let l = player.lock();
+                            l.data.clone()
+                        };
+                        let reason = TileSetReason::Player(data);
+
+                        drop(players);
+                        self.set_tile_at(packet.pos.clone(), tile.to_type(), reason.clone());
+                    }
+                } else {
+                    info!("Received Invalid tile from client with id: {}", packet.tile_id);
+                };
+            },
+
+            other => return Some(other),
+        };
+        None
+    }
+
     pub fn name(&self) -> &str {
         &self.meta.name
     }
@@ -510,34 +523,6 @@ impl World {
 pub enum TileSetReason {
     DontCare,
     Player(ClientDataPacket),
-}
-
-impl TileSetReason {
-    pub fn to_m(&self) -> MTileSetReason {
-        match self {
-            TileSetReason::DontCare => MTileSetReason::DontCare,
-            TileSetReason::Player(p) => {
-                MTileSetReason::Player(p.client_id)
-            }
-        }
-    }
-    
-    pub fn from_m(m: MTileSetReason) -> TileSetReason {
-        match m {
-            MTileSetReason::DontCare => TileSetReason::DontCare,
-            MTileSetReason::Player(p) => {
-                let players = PLAYERS.read();
-                if let Some(player) = players.get(&p) {
-                    let lock = player.lock();
-                    let data = lock.data.clone();
-                    drop(lock);
-                    TileSetReason::Player(data)
-                } else {
-                    TileSetReason::DontCare
-                }
-            }
-        }
-    }
 }
 
 impl Debug for TileSetReason {

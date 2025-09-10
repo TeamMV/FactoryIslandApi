@@ -1,20 +1,17 @@
-use std::fmt::{Debug, Display, Formatter};
+use crate::world::{ChunkPos, PixelUnit, SingleTileUnit, TileExtent, TileUnit, CHUNK_SIZE};
 use mvengine::math::vec::Vec2;
 use mvengine::ui::geometry::{geom, SimpleRect};
-use mvutils::Savable;
 use mvutils::save::{Loader, Savable, Saver};
-use crate::mods::modsdk::MChunkPos;
-use crate::world::{ChunkPos, PixelUnit, SingleTileUnit, TileExtent, TileUnit, CHUNK_SIZE};
+use std::fmt::{Debug, Display, Formatter};
 
 #[derive(Clone, Default)]
-#[repr(C)]
 pub struct TilePos {
     pub raw: (i32, i32),
     pub in_chunk_x: usize,
     pub in_chunk_z: usize,
     pub world_chunk_x: i32,
     pub world_chunk_z: i32,
-    pub chunk_pos: MChunkPos
+    pub chunk_pos: ChunkPos
 }
 
 impl TilePos {
@@ -27,7 +24,7 @@ impl TilePos {
             in_chunk_z: z as usize % CHUNK_SIZE as usize,
             world_chunk_x: cx,
             world_chunk_z: cz,
-            chunk_pos: MChunkPos::new(cx, cz),
+            chunk_pos: (cx, cz),
         }
     }
 
@@ -47,13 +44,9 @@ impl TilePos {
 
         Self::new(tile_x, tile_z)
     }
-    
-    pub fn fi_chunk_pos(&self) -> ChunkPos {
-        self.chunk_pos.to_normal()
-    }
 
     pub fn multitile_chunk_maybe_positions(&self) -> [ChunkPos; 4] {
-        let pos = self.fi_chunk_pos();
+        let pos = self.chunk_pos;
         [pos, (pos.0 - 1, pos.1), (pos.0, pos.1 - 1), (pos.0 - 1, pos.1 - 1)]
     }
 

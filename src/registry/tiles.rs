@@ -1,8 +1,8 @@
 use crate::registry::Registry;
-use crate::world::tiles::implementations::newapi::lamp::{LampState, LampTile};
 use crate::world::tiles::tiles::{Tile, TileInfo};
 use mvutils::lazy;
-use crate::world::tiles::implementations::newapi::conveyor::ConveyorState;
+use crate::world::tiles::implementations::conveyor::ConveyorState;
+use crate::world::tiles::implementations::lamp::{LampState, LampTile};
 
 lazy! {
     pub static TILE_REGISTRY: Registry<Tile> = Registry::new();
