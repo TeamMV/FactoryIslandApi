@@ -52,9 +52,20 @@ pub mod mods;
 pub mod command;
 pub mod registry;
 pub mod ingredients;
+pub mod multitile;
 
 lazy! {
     pub(crate) static PLAYERS: RwLock<HashMap<ClientId, PlayerType, U64IdentityHasher>> = RwLock::new(HashMap::with_hasher(U64IdentityHasher::default()));
+}
+
+pub fn broadcast_all_players(packet: ClientBoundPacket) {
+    let players = PLAYERS.read();
+    for player in players.values() {
+        let lock = player.lock();
+        if let Some(endpoint) = lock.client_endpoint() {
+            endpoint.send(packet.clone());
+        }
+    }
 }
 
 pub struct FactoryIsland {
@@ -103,12 +114,14 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
         let terrain_tiles = registry::terrain::register_all();
         let tiles = registry::tiles::register_all();
         let ingredients = registry::ingredients::register_all();
+        let multitiles = registry::multitiles::register_all(&tiles);
         command::register_commands();
         
         let objects = GameObjects {
             terrain: terrain_tiles,
             tiles,
-            ingredients
+            ingredients,
+            multitiles,
         };
 
         ModLoader::load(&mod_dir, objects.clone());
@@ -285,19 +298,12 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
 
                         drop(players);
                         world_lock.set_tile_at(packet.pos.clone(), tile.to_type(), reason.clone());
-                        let players = PLAYERS.read();
 
-                        // Dont filter out the current id as the tile only gets set on the client if the server says its okay. just to avoid desync
-                        for (_, other_player) in players.iter() {
-                            let lock = other_player.lock();
-                            if let Some(endpoint) = lock.client_endpoint() {
-                                endpoint.send(ClientBoundPacket::TileSet(TileSetPacket {
-                                    pos: packet.pos.clone(),
-                                    tile: to_client.clone(),
-                                    reason: reason.clone(),
-                                }));
-                            }
-                        }
+                        broadcast_all_players(ClientBoundPacket::TileSet(TileSetPacket {
+                            pos: packet.pos.clone(),
+                            tile: to_client.clone(),
+                            reason: reason.clone(),
+                        }));
                     }
                 } else {
                     info!("Received Invalid tile from client with id: {}", packet.tile_id);

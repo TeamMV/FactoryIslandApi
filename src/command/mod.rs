@@ -78,17 +78,6 @@ impl CommandProcessor {
             let cmd = cmd.to_string();
             let cmd_b = cmd.as_bytes();
             if let Some(id) = this.key_map.get(&cmd).cloned() {
-                debug!("found!");
-                //todo
-                //let mut event = Event::ServerCommandEvent(ServerCommandEvent {
-                //    has_been_cancelled: false,
-                //    command,
-                //});
-                //fi.mod_loader.dispatch_event(&mut event);
-                //let command_event = enum_val!(Event, event, ServerCommandEvent);
-                //if command_event.has_been_cancelled {
-                //    return;
-                //}
                 let command = &mut this.commands[id];
                 command.executor.on_command(sender, cmd, parts.map(ToString::to_string).collect(), fi);
             } else {

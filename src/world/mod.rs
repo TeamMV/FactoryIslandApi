@@ -33,16 +33,18 @@ use mvengine::game::fs::smartdir::SmartDir;
 use mvutils::bytebuffer::ByteBufferExtras;
 use mvutils::{enum_val, Savable};
 use mvutils::unsafe_utils::Unsafe;
-use crate::{registry, FactoryIsland, PLAYERS};
+use crate::{broadcast_all_players, registry, FactoryIsland, PLAYERS};
 use crate::mods::ModLoader;
 use crate::mods::modsdk::events::Event;
 use crate::mods::modsdk::events::world::{TerrainSetEvent, TileSetEvent};
 use crate::mods::modsdk::player::MPlayer;
 use crate::mods::modsdk::world::MTileSetReason;
+use crate::multitile::MultiTilePlacement;
 use crate::registry::GameObjects;
+use crate::registry::multitiles::MULTI_REGISTRY;
 use crate::server::ClientBoundPacket;
 use crate::server::packets::common::ClientDataPacket;
-use crate::server::packets::world::{TerrainSetPacket, TileSetPacket};
+use crate::server::packets::world::{MultiTileDestroyedPacket, MultiTilePlacedPacket, TerrainSetPacket, TileSetPacket};
 use crate::world::tiles::terrain::{WorldTerrain, TerrainTile};
 use crate::world::tiles::tiles::{InnerTile, TileType};
 
@@ -53,6 +55,9 @@ pub type ChunkType = SaveArc<Mutex<Chunk>>;
 pub type WorldType = SaveArc<Mutex<World>>;
 
 pub const META_FILENAME: &str = "meta.sav";
+pub const PLAYERS_DIR : &str = "players";
+pub const CHUNKS_DIR : &str = "chunks";
+pub const MULTITILES_FILENAME: &str = "multitiles.sav";
 
 pub const START_FORCE_ALLOWED: u16 = 9;
 
@@ -113,8 +118,8 @@ impl World {
         if !directory.exists_yet() {
             None
         } else {
-            let chunk_directory = directory.join("chunks");
-            let players_directory = directory.join("players");
+            let chunk_directory = directory.join(CHUNKS_DIR);
+            let players_directory = directory.join(PLAYERS_DIR);
             if !directory.exists_file(META_FILENAME) {
                 let new_seed = rng().next_u32();
                 warn!("Meta file is not available, recreating it with a new seed: {}", new_seed);
@@ -161,8 +166,8 @@ impl World {
 
         let directory = SmartDir::new(full);
 
-        let chunk_directory = directory.join("chunks");
-        let players_directory = directory.join("players");
+        let chunk_directory = directory.join(CHUNKS_DIR);
+        let players_directory = directory.join(PLAYERS_DIR);
 
         Arc::new_cyclic(|weak| {
             Mutex::new(Self {
@@ -242,10 +247,26 @@ impl World {
         self.loaded_chunks.insert(pos, chunk);
     }
 
+    pub fn is_multitile_at(&mut self, pos: &TilePos) -> bool {
+        for chunk_pos in pos.multitile_chunk_maybe_positions() {
+            let chunk = self.get_chunk(chunk_pos);
+            let lock = chunk.lock();
+            if lock.multitiles.iter().any(|mt| mt.includes(pos)) {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn get_tile_at(&mut self, pos: TilePos) -> Option<TileType> {
         let chunk = self.get_chunk((pos.world_chunk_x, pos.world_chunk_z));
         let mut lock = chunk.lock();
         lock.tiles[Chunk::get_index(&pos)].clone()
+    }
+
+    pub fn get_tile_id_at(&mut self, pos: TilePos) -> Option<u16> {
+        let lock = self.get_tile_at(pos)?;
+        let x = { let x = Some(lock.read().id as u16); x }; x
     }
 
     pub fn get_terrain_at(&mut self, pos: TilePos) -> WorldTerrain {
@@ -281,6 +302,51 @@ impl World {
             drop(lock);
 
             let rw = tile.read();
+
+            let mut remove = None;
+            for chunk_pos in pos.multitile_chunk_maybe_positions() {
+                let chunk = self.get_chunk(chunk_pos);
+                let mut lock = chunk.lock();
+                for i in 0..lock.multitiles.len() {
+                    if lock.multitiles[i].includes(&pos) {
+                        remove = Some(i);
+                        break;
+                    }
+                }
+                if let Some(i) = remove {
+                    let multiblock = lock.multitiles.remove(i);
+                    let packet = ClientBoundPacket::MultiTileDestroyedPacket(MultiTileDestroyedPacket {
+                        placement_id: multiblock.uuid,
+                        chunk_pos: multiblock.pos.fi_chunk_pos(),
+                    });
+                    broadcast_all_players(packet);
+                    break;
+                }
+            }
+
+            //check multiblocks
+            let mut placement = None;
+            for mt_id in 0..MULTI_REGISTRY.len() {
+                if let Some(multi) = MULTI_REGISTRY.reference_object(mt_id) {
+                    if let Some(p) = multi.check_completion(self, pos.clone(), rw.id as u16) {
+                        placement = Some(p);
+                        break;
+                    }
+                }
+            }
+
+            if let Some(placement) = placement {
+                let chunk = self.get_chunk(placement.pos.fi_chunk_pos());
+                let mut lock = chunk.lock();
+                lock.multitiles.push(placement.clone());
+                drop(lock);
+                let packet = ClientBoundPacket::MultiTilePlacedPacket(MultiTilePlacedPacket {
+                    placement,
+                });
+                broadcast_all_players(packet);
+            }
+
+
             let state = if let Some(s) = &rw.info.state {
                 let mut buf = ByteBuffer::new_le();
                 s.save_for_client(&mut buf);
@@ -295,17 +361,11 @@ impl World {
                 state
             };
 
-            let players = PLAYERS.read();
-            for player in players.values() {
-                let lock = player.lock();
-                if let Some(endpoint) = lock.client_endpoint() {
-                    endpoint.send(ClientBoundPacket::TileSet(TileSetPacket {
-                        pos: pos.clone(),
-                        tile: client_obj.clone(),
-                        reason: TileSetReason::DontCare,
-                    }));
-                }
-            }
+            broadcast_all_players(ClientBoundPacket::TileSet(TileSetPacket {
+                pos: pos.clone(),
+                tile: client_obj.clone(),
+                reason: TileSetReason::DontCare,
+            }));
         }
     }
 
@@ -341,17 +401,11 @@ impl World {
                 state: vec![]
             };
 
-            let players = PLAYERS.read();
-            for player in players.values() {
-                let lock = player.lock();
-                if let Some(endpoint) = lock.client_endpoint() {
-                    endpoint.send(ClientBoundPacket::TerrainSet(TerrainSetPacket {
-                        pos: pos.clone(),
-                        tile: client_obj.clone(),
-                        reason: TileSetReason::DontCare,
-                    }));
-                }
-            }
+            broadcast_all_players(ClientBoundPacket::TerrainSet(TerrainSetPacket {
+                pos: pos.clone(),
+                tile: client_obj.clone(),
+                reason: TileSetReason::DontCare,
+            }));
         }
     }
     
@@ -388,17 +442,11 @@ impl World {
                 state
             };
 
-            let players = PLAYERS.read();
-            for player in players.values() {
-                let lock = player.lock();
-                if let Some(endpoint) = lock.client_endpoint() {
-                    endpoint.send(ClientBoundPacket::TileSet(TileSetPacket {
-                        pos: at.clone(),
-                        tile: client_obj.clone(),
-                        reason: TileSetReason::DontCare,
-                    }));
-                }
-            }
+            broadcast_all_players(ClientBoundPacket::TileSet(TileSetPacket {
+                pos: at.clone(),
+                tile: client_obj.clone(),
+                reason: TileSetReason::DontCare,
+            }));
         }
     }
 
@@ -504,6 +552,7 @@ impl Debug for TileSetReason {
 pub type SingleTileUnit = f64;
 pub type TileUnit = (SingleTileUnit, SingleTileUnit); //These are in TILES because we dont know the tilesize on server
 pub type PixelUnit = (i32, i32);
+pub type TileExtent = (i32, i32);
 
 pub fn resolve_unit(value: TileUnit, tile_size: i32) -> PixelUnit {
     (

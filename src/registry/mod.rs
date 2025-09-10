@@ -1,3 +1,4 @@
+use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, Ordering};
 use abi_stable::std_types::RString;
 use mvutils::Savable;
@@ -5,12 +6,14 @@ use mvutils::save::{Loader, Savable, Saver};
 use mvutils::unsafe_utils::Unsafe;
 use parking_lot::RwLock;
 use crate::registry::ingredients::Ingredients;
+use crate::registry::multitiles::MultiTiles;
 use crate::registry::terrain::TerrainTiles;
 use crate::registry::tiles::Tiles;
 
 pub mod terrain;
 pub mod tiles;
 pub mod ingredients;
+pub mod multitiles;
 
 pub struct Registry<T: Registerable> {
     locked: AtomicBool,
@@ -70,7 +73,8 @@ pub trait Registerable: Clone {
 pub struct GameObjects {
     pub terrain: TerrainTiles,
     pub tiles: Tiles,
-    pub ingredients: Ingredients
+    pub ingredients: Ingredients,
+    pub multitiles: MultiTiles
 }
 
 #[derive(Clone, Debug, Savable)]

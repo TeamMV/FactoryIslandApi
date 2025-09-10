@@ -1,3 +1,4 @@
+use std::hash::{Hash, Hasher};
 use crate::ingredients::IngredientKind;
 use crate::player::uuid::UUID;
 use crate::registry::ObjectSource;
@@ -31,4 +32,10 @@ pub struct ServerStatePacket {
 pub struct TileKind {
     pub id: usize,
     pub source: ObjectSource
+}
+
+impl Hash for TileKind {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u16(self.id as u16);
+    }
 }

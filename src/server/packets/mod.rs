@@ -5,7 +5,7 @@ pub mod player;
 use mvutils::Savable;
 use crate::server::packets::common::{ClientDataPacket, ServerStatePacket};
 use crate::server::packets::player::{OtherPlayerChatPacket, OtherPlayerJoinPacket, OtherPlayerLeavePacket, OtherPlayerMovePacket, PlayerChatPacket, PlayerDataPacket, PlayerMovePacket};
-use crate::server::packets::world::{ChunkDataPacket, ChunkUnloadPacket, TerrainSetPacket, TileSetFromClientPacket, TileSetPacket};
+use crate::server::packets::world::{ChunkDataPacket, ChunkUnloadPacket, MultiTileDestroyedPacket, MultiTilePlacedPacket, TerrainSetPacket, TileSetFromClientPacket, TileSetPacket};
 
 #[derive(Savable, Clone)]
 pub enum ClientBoundPacket {
@@ -19,7 +19,9 @@ pub enum ClientBoundPacket {
     ServerState(ServerStatePacket),
     ChunkUnload(ChunkUnloadPacket),
     OtherPlayerChat(OtherPlayerChatPacket),
-    PlayerDataPacket(PlayerDataPacket)
+    PlayerDataPacket(PlayerDataPacket),
+    MultiTilePlacedPacket(MultiTilePlacedPacket),
+    MultiTileDestroyedPacket(MultiTileDestroyedPacket)
 }
 
 #[derive(Savable, Clone)]

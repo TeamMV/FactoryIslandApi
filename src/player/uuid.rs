@@ -3,7 +3,7 @@ use uuid::{Bytes, Uuid};
 use mvutils::save::{Loader, Savable, Saver};
 use std::ops::{Deref, DerefMut};
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Hash)]
 pub struct UUID {
     inner: Uuid
 }

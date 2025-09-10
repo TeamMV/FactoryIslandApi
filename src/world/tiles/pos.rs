@@ -1,10 +1,10 @@
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use mvengine::math::vec::Vec2;
 use mvengine::ui::geometry::{geom, SimpleRect};
 use mvutils::Savable;
 use mvutils::save::{Loader, Savable, Saver};
 use crate::mods::modsdk::MChunkPos;
-use crate::world::{ChunkPos, PixelUnit, SingleTileUnit, TileUnit, CHUNK_SIZE};
+use crate::world::{ChunkPos, PixelUnit, SingleTileUnit, TileExtent, TileUnit, CHUNK_SIZE};
 
 #[derive(Clone, Default)]
 #[repr(C)]
@@ -48,16 +48,21 @@ impl TilePos {
         Self::new(tile_x, tile_z)
     }
     
-    pub(crate) fn fi_chunk_pos(&self) -> ChunkPos {
+    pub fn fi_chunk_pos(&self) -> ChunkPos {
         self.chunk_pos.to_normal()
     }
 
+    pub fn multitile_chunk_maybe_positions(&self) -> [ChunkPos; 4] {
+        let pos = self.fi_chunk_pos();
+        [pos, (pos.0 - 1, pos.1), (pos.0, pos.1 - 1), (pos.0 - 1, pos.1 - 1)]
+    }
+
     pub fn up(&self, n: i32) -> Self {
-        Self::new(self.raw.0, self.raw.1 - n)
+        Self::new(self.raw.0, self.raw.1 + n)
     }
 
     pub fn down(&self, n: i32) -> Self {
-        Self::new(self.raw.0, self.raw.1 + n)
+        Self::new(self.raw.0, self.raw.1 - n)
     }
 
     pub fn left(&self, n: i32) -> Self {
@@ -90,6 +95,54 @@ impl TilePos {
         ]
     }
 
+    pub fn to_unit(&self) -> TileUnit {
+        (self.raw.0 as f64, self.raw.1 as f64)
+    }
+
+    pub fn enumerate_rect(&self, extent: TileExtent) -> impl Iterator<Item = TilePos> {
+        struct TilePosRectangleEnumerator {
+            original: TilePos,
+            x: i32,
+            y: i32,
+            width: i32,
+            height: i32,
+        }
+
+        impl Iterator for TilePosRectangleEnumerator {
+            type Item = TilePos;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                if self.y >= self.height {
+                    return None;
+                }
+
+                let mut pos = self.original.clone();
+                if self.x > 0 {
+                    pos = pos.right(self.x);
+                }
+                if self.y > 0 {
+                    pos = pos.down(self.y);
+                }
+
+                self.x += 1;
+                if self.x >= self.width {
+                    self.x = 0;
+                    self.y += 1;
+                }
+
+                Some(pos)
+            }
+        }
+
+        TilePosRectangleEnumerator {
+            original: self.clone(),
+            x: 0,
+            y: 0,
+            width: extent.0,
+            height: extent.1,
+        }
+    }
+
     pub fn distance_from<T: TileDistance>(&self, t: &T) -> SingleTileUnit {
         t.distance(self)
     }
@@ -104,6 +157,12 @@ impl From<(i32, i32)> for TilePos {
 impl Debug for TilePos {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str(&format!("raw:{:?}, cx:{}, cz:{}, wx:{}, wz:{}", self.raw, self.in_chunk_x, self.in_chunk_z, self.world_chunk_x, self.world_chunk_z))
+    }
+}
+
+impl Display for TilePos {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!("{} {} [{} {}]", self.raw.0, self.raw.1, self.in_chunk_x, self.in_chunk_z))
     }
 }
 

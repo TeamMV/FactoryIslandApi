@@ -1,5 +1,7 @@
 use crate::world::{ChunkPos, ChunkType, TileSetReason};
 use mvutils::Savable;
+use crate::multitile::MultiTilePlacement;
+use crate::player::uuid::UUID;
 use crate::world::chunk::{ToClientChunk, ToClientObject};
 use crate::world::tiles::Orientation;
 use crate::world::tiles::pos::TilePos;
@@ -37,4 +39,15 @@ pub struct ChunkDataPacket {
 #[derive(Savable, Clone)]
 pub struct ChunkUnloadPacket {
     pub pos: ChunkPos,
+}
+
+#[derive(Savable, Clone)]
+pub struct MultiTilePlacedPacket {
+    pub placement: MultiTilePlacement
+}
+
+#[derive(Savable, Clone)]
+pub struct MultiTileDestroyedPacket {
+    pub placement_id: UUID,
+    pub chunk_pos: ChunkPos,
 }

@@ -14,6 +14,7 @@ use mvutils::save::custom::ignore_save;
 use mvutils::save::{Loader, Savable};
 use mvutils::{enum_val, Savable};
 use mvutils::bytebuffer::ByteBufferExtras;
+use crate::multitile::MultiTilePlacement;
 
 pub const CHUNK_TILES: usize = CHUNK_SIZE as usize * CHUNK_SIZE as usize;
 
@@ -24,6 +25,7 @@ pub struct Chunk {
     pub position: ChunkPos,
     pub tiles: Box<[Option<TileType>; CHUNK_TILES]>,
     pub terrain: TerrainLayer,
+    pub multitiles: Vec<MultiTilePlacement>,
 }
 
 impl Chunk {
@@ -33,6 +35,7 @@ impl Chunk {
             position: pos,
             tiles: Box::new([0; CHUNK_TILES].map(|_| None)),
             terrain: TerrainLayer::new(),
+            multitiles: vec![],
         }
     }
 
@@ -146,6 +149,7 @@ impl Chunk {
         ToClientChunk {
             terrain,
             tiles,
+            multitiles: self.multitiles.clone(),
         }
     }
     
@@ -256,6 +260,7 @@ impl TerrainLayer {
 pub struct ToClientChunk {
     pub terrain: Vec<ToClientObject>,
     pub tiles: Vec<Option<ToClientObject>>,
+    pub multitiles: Vec<MultiTilePlacement>,
 }
 
 #[derive(Clone, Savable)]
