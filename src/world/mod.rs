@@ -7,7 +7,7 @@ use crate::player::PlayerType;
 use crate::world::chunk::{Chunk, ToClientObject};
 use crate::world::generate::{ChunkGenerator, GeneratePipeline};
 use crate::world::manager::ChunkManager;
-use crate::world::tiles::pos::TilePos;
+use crate::world::tiles::pos::{TileDistance, TilePos};
 use mvengine::event::EventBus;
 use mvengine::rendering::RenderContext;
 use mvengine::ui::context::UiResources;
@@ -44,6 +44,7 @@ use crate::server::packets::common::{ClientDataPacket, PlayerData};
 use crate::server::packets::player::{OtherPlayerChatPacket, OtherPlayerJoinPacket, OtherPlayerMovePacket};
 use crate::server::packets::world::{MultiTileDestroyedPacket, MultiTilePlacedPacket, TerrainSetPacket, TileSetPacket};
 use crate::world::tiles::terrain::{WorldTerrain, TerrainTile};
+use crate::world::tiles::{create_tile, tile_to_client};
 use crate::world::tiles::tiles::{InnerTile, TileType};
 
 pub const CHUNK_SIZE: i32 = 64;
@@ -355,6 +356,7 @@ impl World {
             state
         };
 
+        //also include the player that set the tile as his client only has the ghost block for now
         broadcast_all_players(ClientBoundPacket::TileSet(TileSetPacket {
             pos: pos.clone(),
             tile: client_obj.clone(),
@@ -475,14 +477,36 @@ impl World {
                     }
                     let player = players.get(&client.id()).cloned();
                     if let Some(player) = player {
-                        let data = {
-                            let l = player.lock();
-                            l.data.clone()
-                        };
+                        let player_lock = player.lock();
+                        let data = player_lock.data.clone();
+                        let reach = player_lock.reach;
+                        let dist = player_lock.position.distance(&packet.pos);
+                        drop(player_lock);
                         let reason = TileSetReason::Player(data);
 
                         drop(players);
-                        self.set_tile_at(packet.pos.clone(), tile.to_type(), reason.clone());
+
+                        let before_id = self.get_tile_id_at(packet.pos.clone())
+                            .unwrap_or_default();
+
+                        //check if the spot is already occupied
+                        let mut cancel_cond = before_id as usize != self.objects.tiles.air;
+                        //check if the player has enough reach to place that block
+                        cancel_cond |= dist > reach;
+
+                        if cancel_cond {
+                            let before = self.get_tile_at(packet.pos.clone())
+                                .unwrap_or(create_tile(self.objects.tiles.air));
+
+                            //send the tile back that existed before, as tiles cannot be placed on top of one another
+                            client.send(ClientBoundPacket::TileSet(TileSetPacket {
+                                pos: packet.pos,
+                                tile: tile_to_client(&before),
+                                reason: TileSetReason::DontCare,
+                            }));
+                        } else {
+                            self.set_tile_at(packet.pos.clone(), tile.to_type(), reason.clone());
+                        }
                     }
                 } else {
                     info!("Received Invalid tile from client with id: {}", packet.tile_id);

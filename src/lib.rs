@@ -32,7 +32,7 @@ use mvutils::clock::Clock;
 use mvutils::save::Savable;
 use mvutils::unsafe_utils::Unsafe;
 use parking_lot::RwLock;
-use crate::ingredients::IngredientKind;
+use crate::ingredients::{IngredientKind, IngredientStack};
 use crate::packethandler::PacketHandler;
 use crate::registry::ingredients::INGREDIENT_REGISTRY;
 use crate::registry::tiles::TILE_REGISTRY;
@@ -49,7 +49,10 @@ pub mod command;
 pub mod registry;
 pub mod ingredients;
 pub mod multitile;
-mod packethandler;
+pub mod packethandler;
+pub mod inventory;
+pub mod unit;
+mod utils;
 
 lazy! {
     pub(crate) static PLAYERS: RwLock<HashMap<ClientId, PlayerType, U64IdentityHasher>> = RwLock::new(HashMap::with_hasher(U64IdentityHasher::default()));
@@ -98,6 +101,17 @@ impl FactoryIsland {
     pub fn stop(&mut self) {
         exit(0);
     }
+    
+    pub fn save(&self) {
+        let mut world = self.world.lock();
+        world.save();
+        drop(world);
+        let players = PLAYERS.read();
+        for player in players.values() {
+            let mut locked = player.lock();
+            locked.on_disconnect();
+        }
+    }
 }
 
 impl ServerHandler<ServerBoundPacket> for FactoryIsland {
@@ -116,6 +130,9 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
             ingredients,
             multitiles,
         };
+
+        let stack = IngredientStack::new(objects.ingredients.stone, 1);
+        println!("stone stack: {stack:#?}");
 
         let world = World::get_main(objects.clone());
 
@@ -151,9 +168,7 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
         let mut ingredients = Vec::with_capacity(INGREDIENT_REGISTRY.len() - 1);
         for id in 1..INGREDIENT_REGISTRY.len() {
             if let Some(object) = INGREDIENT_REGISTRY.create_object(id) {
-                ingredients.push(IngredientKind {
-                    id,
-                });
+                ingredients.push(id);
             }
         }
         client.send(ClientBoundPacket::ServerState(ServerStatePacket {

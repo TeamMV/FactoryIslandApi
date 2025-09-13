@@ -3,6 +3,7 @@ use mvengine::rendering::RenderContext;
 use mvengine::ui::context::UiResources;
 use mvutils::bytebuffer::ByteBufferExtras;
 use mvutils::Savable;
+use crate::registry::tiles::TILE_REGISTRY;
 use crate::world::chunk::ToClientObject;
 use crate::world::tiles::tiles::TileType;
 
@@ -49,5 +50,14 @@ pub fn tile_to_client(tile_type: &TileType) -> ToClientObject {
         source: lock.info.source.clone(),
         orientation: lock.info.orientation,
         state,
+    }
+}
+
+pub fn create_tile(id: usize) -> TileType {
+    if let Some(x) = TILE_REGISTRY.create_object(id) {
+        x.to_type()
+    } else {
+        let air = TILE_REGISTRY.create_object(0).unwrap();
+        air.to_type()
     }
 }

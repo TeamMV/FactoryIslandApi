@@ -1,0 +1,8 @@
+<ingredient>
+    <static>
+        <meta name="melting_point" val="1500K"/>
+    </static>
+    <dynamic>
+
+    </dynamic>
+</ingredient>

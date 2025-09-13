@@ -1,5 +1,6 @@
 use mvutils::lazy;
-use crate::ingredients::Ingredient;
+use crate::ingredients::{Ingredient, IngredientCreator};
+use crate::unit::{Unit, UnitPrefix, KELVIN_CELSIUS_OFFSET};
 use crate::registry::Registry;
 
 lazy! {
@@ -7,7 +8,7 @@ lazy! {
 }
 
 macro_rules! define_ingredients {
-    ($struct_name:ident, $func_name:ident, [$($ingredient_name:ident),* $(,)?]) => {
+    ($struct_name:ident, $func_name:ident, [$($ingredient_name:ident = $($creator:expr)*),* $(,)?]) => {
         #[derive(Clone)]
         pub struct $struct_name {
             $(pub $ingredient_name: usize),*
@@ -16,7 +17,7 @@ macro_rules! define_ingredients {
         pub fn $func_name() -> $struct_name {
             $struct_name {
                 $(
-                    $ingredient_name: INGREDIENT_REGISTRY.register(()),
+                    $ingredient_name: INGREDIENT_REGISTRY.register($($creator)*),
                 )*
             }
         }
@@ -24,5 +25,5 @@ macro_rules! define_ingredients {
 }
 
 define_ingredients!(Ingredients, register_all, [
-    stone
+    stone = IngredientCreator::read(include_str!("files/ingredients/stone.xml")),
 ]);
