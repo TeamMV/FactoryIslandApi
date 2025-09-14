@@ -1,10 +1,9 @@
-use std::hash::{Hash, Hasher};
 use crate::ingredients::IngredientKind;
-use crate::player::uuid::UUID;
-use crate::registry::ObjectSource;
+use crate::player::profile::PlayerProfile;
+pub use crate::world::tiles::TileKind;
 use mvengine::net::server::ClientId;
 use mvutils::Savable;
-use crate::player::profile::PlayerProfile;
+use std::hash::Hash;
 
 #[derive(Clone, Debug, Savable)]
 pub struct ClientDataPacket {
@@ -25,16 +24,4 @@ pub struct ServerStatePacket {
     pub tiles: Vec<TileKind>,
     pub ingredients: Vec<IngredientKind>,
     pub client_id: ClientId
-}
-
-#[derive(Clone, Savable)]
-pub struct TileKind {
-    pub id: usize,
-    pub source: ObjectSource
-}
-
-impl Hash for TileKind {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u16(self.id as u16);
-    }
 }

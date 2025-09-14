@@ -1,10 +1,9 @@
 use crate::multitile::MultiTilePlacement;
 use crate::registry::terrain::TERRAIN_REGISTRY;
-use crate::registry::{GameObjects, ObjectSource};
+use crate::registry::GameObjects;
 use crate::world::generate::ChunkGenerator;
 use crate::world::tiles::pos::TilePos;
-use crate::world::tiles::tiles::TileType;
-use crate::world::tiles::Orientation;
+use crate::world::tiles::{Orientation, TileType};
 use crate::world::{tiles, ChunkPos, CHUNK_SIZE};
 use abi_stable::std_types::{RHashMap, Tuple2};
 use mvutils::save::custom::ignore_save;
@@ -106,14 +105,12 @@ impl Chunk {
                     ToClientObject {
                         id,
                         orientation: o,
-                        source: tile.info.source.clone(),
                         state: vec![]
                     }
                 } else {
                     ToClientObject {
                         id: 0,
                         orientation: o,
-                        source: ObjectSource::Vanilla,
                         state: vec![]
                     }
                 }
@@ -224,7 +221,6 @@ pub struct ToClientChunk {
 #[derive(Clone, Savable)]
 pub struct ToClientObject {
     pub id: u16,
-    pub source: ObjectSource,
     pub orientation: Orientation,
     pub state: Vec<u8>
 }

@@ -15,7 +15,6 @@ use crate::command::players::PlayersCommand;
 use crate::command::save::SaveCommand;
 use crate::command::stop::StopCommand;
 use crate::FactoryIsland;
-use crate::registry::ObjectSource;
 use crate::server::packets::common::PlayerData;
 
 lazy! {
@@ -47,7 +46,7 @@ impl CommandProcessor {
         }
     }
 
-    pub fn register(&self, cmd: Command, source: &ObjectSource) {
+    pub fn register(&self, cmd: Command) {
         let mut this = self.inner.write();
         let id = this.commands.len();
         if this.key_map.try_insert(cmd.key.clone(), id).is_err() {
@@ -57,13 +56,6 @@ impl CommandProcessor {
         for alias in &cmd.aliases {
             if this.key_map.try_insert(alias.clone(), id).is_err() {
                 warn!("Command alias {alias} for command {} is already taken and will not be registered", cmd.key);
-            }
-        }
-
-        if let ObjectSource::Mod(mod_id) = source {
-            this.key_map.insert(format!("{mod_id}:{}", cmd.key), id);
-            for alias in &cmd.aliases {
-                this.key_map.insert(format!("{mod_id}:{alias}"), id);
             }
         }
 
@@ -169,9 +161,9 @@ pub trait CommandExecutor {
 }
 
 pub(crate) fn register_commands() {
-    COMMAND_PROCESSOR.register(Command::new("players", vec![], None, PlayersCommand).unwrap(), &ObjectSource::Vanilla);
-    COMMAND_PROCESSOR.register(Command::new("chunks", vec![], None, ChunksCommand).unwrap(), &ObjectSource::Vanilla);
-    COMMAND_PROCESSOR.register(Command::new("save", vec![], None, SaveCommand).unwrap(), &ObjectSource::Vanilla);
-    COMMAND_PROCESSOR.register(Command::new("stop", vec![], None, StopCommand).unwrap(), &ObjectSource::Vanilla);
-    COMMAND_PROCESSOR.register(Command::new("commands", vec![], None, CommandsCommand).unwrap(), &ObjectSource::Vanilla);
+    COMMAND_PROCESSOR.register(Command::new("players", vec![], None, PlayersCommand).unwrap());
+    COMMAND_PROCESSOR.register(Command::new("chunks", vec![], None, ChunksCommand).unwrap());
+    COMMAND_PROCESSOR.register(Command::new("save", vec![], None, SaveCommand).unwrap());
+    COMMAND_PROCESSOR.register(Command::new("stop", vec![], None, StopCommand).unwrap());
+    COMMAND_PROCESSOR.register(Command::new("commands", vec![], None, CommandsCommand).unwrap());
 }

@@ -2,8 +2,11 @@ use std::sync::Arc;
 use log::debug;
 use mvengine::net::server::ClientEndpoint;
 use crate::{FactoryIsland, PLAYERS};
+use crate::ingredients::IngredientStack;
+use crate::inventory::{InventoryData, InventoryOwner, ItemAction};
 use crate::server::packets::common::PlayerData;
 use crate::server::{ClientBoundPacket, ServerBoundPacket};
+use crate::server::packets::inventory::InventoryDataPacket;
 use crate::server::packets::player::{OtherPlayerChatPacket, OtherPlayerJoinPacket, OtherPlayerMovePacket};
 
 pub struct PacketHandler;
@@ -84,6 +87,31 @@ impl PacketHandler {
                     lock.loaded_chunks.clear();
                     let rdst = lock.data.render_distance;
                     lock.after_move(rdst);
+                }
+            }
+            ServerBoundPacket::InventoryOpenPacket(packet) => {
+                if let InventoryOwner::Tile(tile) = packet.owner {
+                    unimplemented!();
+                    // TODO!: gasp alarm
+                } else {
+                    // This is very temporary code, this isn't how we actually open inventories
+                    let mut inventory = InventoryData::new(10, 3, true);
+                    inventory.add_stack(IngredientStack::new(fi.objects.ingredients.stone, 1));
+
+                    for i in 0..20 {
+                        inventory.stacks.push(IngredientStack::new(fi.objects.ingredients.stone, 1));
+                        inventory.current_amt += 1;
+                    }
+
+                    let mut second_inv = InventoryData::new(20, 6, true);
+                    second_inv.add_stack(IngredientStack::new(fi.objects.ingredients.stone, 5));
+
+                    client.send(ClientBoundPacket::InventoryDataPacket(InventoryDataPacket {
+                        data: inventory,
+                        player_inventory: Some(second_inv),
+                        owner: InventoryOwner::Player,
+                        item_actions: ItemAction::DROP,
+                    }));
                 }
             }
             other => return Some(other),

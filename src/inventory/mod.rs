@@ -1,17 +1,68 @@
 use crate::ingredients::IngredientStack;
+use crate::world::tiles::InventoryTarget;
+use mvutils::utils::TetrahedronOp;
+use mvutils::{utils, Savable};
+use std::ops::{BitOr, BitOrAssign};
 
+#[derive(Clone, Savable)]
+pub enum InventoryOwner {
+    Tile(InventoryTarget),
+    Player
+}
+
+#[derive(Clone, Copy, Savable)]
+#[repr(transparent)]
+pub struct ItemAction(u8);
+
+impl ItemAction {
+    pub const TRANSFER_TO_PLAYER: ItemAction = ItemAction(1 << 0);
+    pub const TRANSFER_FROM_PLAYER: ItemAction = ItemAction(1 << 1);
+    pub const DROP: ItemAction = ItemAction(1 << 2);
+
+    pub fn can_transfer_from_player(&self) -> bool {
+        self.0 & Self::TRANSFER_FROM_PLAYER.0 > 0
+    }
+
+    pub fn can_transfer_to_player(&self) -> bool {
+        self.0 & Self::TRANSFER_TO_PLAYER.0 > 0
+    }
+
+    pub fn can_drop(&self) -> bool {
+        self.0 & Self::DROP.0 > 0
+    }
+}
+
+impl BitOr for ItemAction {
+    type Output = ItemAction;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        ItemAction(self.0 | rhs.0)
+    }
+}
+
+impl BitOrAssign for ItemAction {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
+    }
+}
+
+#[derive(Clone, Savable, PartialEq, Debug)]
 pub struct InventoryData {
-    stacks: Vec<IngredientStack>,
-    current_amt: u64,
-    item_limit: u64,
+    pub stacks: Vec<IngredientStack>,
+    pub current_amt: u64,
+    pub item_limit: u64,
+    pub width: u64,
+    pub id: u64,
 }
 
 impl InventoryData {
-    pub fn new(limit: u64) -> Self {
+    pub fn new(limit: u64, width: u64, is_player: bool) -> Self {
         Self {
             stacks: Vec::new(),
             current_amt: 0,
-            item_limit: limit
+            item_limit: limit,
+            width,
+            id: is_player.yn(0, utils::next_id("InventoryId") + 1),
         }
     }
 

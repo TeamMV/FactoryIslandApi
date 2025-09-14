@@ -5,9 +5,9 @@ use crate::command::{CommandProcessor, CommandSender, COMMAND_PROCESSOR};
 use crate::player::{Player, PlayerType};
 use crate::registry::terrain::TerrainTiles;
 use crate::registry::GameObjects;
-use crate::server::packets::common::{ClientDataPacket, PlayerData, ServerStatePacket, TileKind};
+use crate::server::packets::common::{ClientDataPacket, PlayerData, ServerStatePacket};
 use crate::server::packets::player::{OtherPlayerChatPacket, OtherPlayerJoinPacket, OtherPlayerLeavePacket, OtherPlayerMovePacket, PlayerMovePacket};
-use crate::server::{ClientBoundPacket, ServerBoundPacket};
+use crate::server::{ClientBoundPacket, ServerBoundPacket, REQ_WORLD};
 use crate::world::{TileSetReason, World, WorldType};
 use hashbrown::HashSet;
 use log::{debug, error, info, warn};
@@ -38,8 +38,7 @@ use crate::registry::ingredients::INGREDIENT_REGISTRY;
 use crate::registry::tiles::TILE_REGISTRY;
 use crate::server::packets::world::TileSetPacket;
 use crate::world::chunk::ToClientObject;
-use crate::world::tiles::Orientation;
-use crate::world::tiles::tiles::TileType;
+use crate::world::tiles::{Orientation, TileKind};
 
 pub mod world;
 pub mod settings;
@@ -53,6 +52,7 @@ pub mod packethandler;
 pub mod inventory;
 pub mod unit;
 mod utils;
+pub mod meta;
 
 lazy! {
     pub(crate) static PLAYERS: RwLock<HashMap<ClientId, PlayerType, U64IdentityHasher>> = RwLock::new(HashMap::with_hasher(U64IdentityHasher::default()));
@@ -116,8 +116,6 @@ impl FactoryIsland {
 
 impl ServerHandler<ServerBoundPacket> for FactoryIsland {
     fn on_server_start(port: u16) -> Self {
-        let args = ParsedArgs::parse(env::args());
-        
         let terrain_tiles = registry::terrain::register_all();
         let tiles = registry::tiles::register_all();
         let ingredients = registry::ingredients::register_all();
@@ -134,7 +132,14 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
         let stack = IngredientStack::new(objects.ingredients.stone, 1);
         println!("stone stack: {stack:#?}");
 
-        let world = World::get_main(objects.clone());
+        let bind = REQ_WORLD.read();
+        let world_name = bind.as_ref();
+        let world_name = world_name.map(|x| x.as_str()).unwrap_or("main");
+
+        let world = World::load(world_name, objects.clone());
+
+        //idk maybe panic here instead
+        let world = world.unwrap_or(World::get_main(objects.clone()));
 
         FactoryIsland {
             world,
@@ -159,10 +164,7 @@ impl ServerHandler<ServerBoundPacket> for FactoryIsland {
         let mut tiles = Vec::with_capacity(TILE_REGISTRY.len() - 1);
         for id in 1..TILE_REGISTRY.len() {
             if let Some(object) = TILE_REGISTRY.create_object(id) {
-                tiles.push(TileKind {
-                    id,
-                    source: object.info.source.clone(),
-                });
+                tiles.push(id as TileKind);
             }
         }
         let mut ingredients = Vec::with_capacity(INGREDIENT_REGISTRY.len() - 1);

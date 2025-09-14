@@ -76,10 +76,3 @@ pub struct GameObjects {
     pub ingredients: Ingredients,
     pub multitiles: MultiTiles
 }
-
-#[derive(Clone, Debug, Savable)]
-#[repr(C)]
-pub enum ObjectSource {
-    Vanilla,
-    Mod(RString)
-}

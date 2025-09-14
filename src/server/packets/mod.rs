@@ -1,9 +1,11 @@
 pub mod common;
 pub mod world;
 pub mod player;
+pub mod inventory;
 
 use mvutils::Savable;
 use crate::server::packets::common::{ClientDataPacket, ServerStatePacket};
+use crate::server::packets::inventory::{InventoryDataPacket, InventoryItemActionPacket, InventoryOpenPacket};
 use crate::server::packets::player::{OtherPlayerChatPacket, OtherPlayerJoinPacket, OtherPlayerLeavePacket, OtherPlayerMovePacket, PlayerChatPacket, PlayerDataPacket, PlayerMovePacket};
 use crate::server::packets::world::{ChunkDataPacket, ChunkUnloadPacket, MultiTileDestroyedPacket, MultiTilePlacedPacket, TerrainSetPacket, TileSetFromClientPacket, TileSetPacket};
 
@@ -21,7 +23,14 @@ pub enum ClientBoundPacket {
     OtherPlayerChat(OtherPlayerChatPacket),
     PlayerDataPacket(PlayerDataPacket),
     MultiTilePlacedPacket(MultiTilePlacedPacket),
-    MultiTileDestroyedPacket(MultiTileDestroyedPacket)
+    MultiTileDestroyedPacket(MultiTileDestroyedPacket),
+    InventoryDataPacket(InventoryDataPacket)
+}
+
+impl ClientBoundPacket {
+    pub fn needs_window(&self) -> bool {
+        matches!(self, Self::InventoryDataPacket(_))
+    }
 }
 
 #[derive(Savable, Clone)]
@@ -31,4 +40,6 @@ pub enum ServerBoundPacket {
     TileSet(TileSetFromClientPacket),
     PlayerChat(PlayerChatPacket),
     RequestReload,
+    InventoryOpenPacket(InventoryOpenPacket),
+    InventoryItemActionPacket(InventoryItemActionPacket)
 }

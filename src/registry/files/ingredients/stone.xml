@@ -3,6 +3,6 @@
         <meta name="melting_point" val="1500K"/>
     </static>
     <dynamic>
-
+        <meta name="temperature" val="298K"/>
     </dynamic>
 </ingredient>

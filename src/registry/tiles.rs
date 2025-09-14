@@ -1,8 +1,10 @@
 use crate::registry::Registry;
-use crate::world::tiles::tiles::{Tile, TileInfo};
 use mvutils::lazy;
-use crate::world::tiles::implementations::conveyor::ConveyorState;
-use crate::world::tiles::implementations::lamp::{LampState, LampTile};
+use crate::world::tiles::implementations::Air;
+use crate::world::tiles::implementations::conveyor::Conveyor;
+use crate::world::tiles::implementations::lamp::Lamp;
+use crate::world::tiles::implementations::static_tile::StaticTile;
+use crate::world::tiles::Tile;
 
 lazy! {
     pub static TILE_REGISTRY: Registry<Tile> = Registry::new();
@@ -18,7 +20,7 @@ macro_rules! define_tiles {
         pub fn $func_name() -> $struct_name {
             $struct_name {
                 $(
-                    $tile_name: TILE_REGISTRY.register($tile_init),
+                    $tile_name: TILE_REGISTRY.register(Box::new($tile_init)),
                 )*
             }
         }
@@ -26,8 +28,8 @@ macro_rules! define_tiles {
 }
 
 define_tiles!(Tiles, register_all, [
-    air = TileInfo::vanilla_static(),
-    wood = TileInfo::vanilla_static(),
-    lamp = TileInfo::vanilla_update_with(LampTile::new(), LampState::new()),
-    conveyor = TileInfo::vanilla_static_with(ConveyorState::new())
+    air = Air,
+    wood = StaticTile::new(100.0),
+    lamp = Lamp::new(),
+    conveyor = Conveyor::new()
 ]);

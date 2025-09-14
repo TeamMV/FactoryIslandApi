@@ -44,8 +44,7 @@ use crate::server::packets::common::{ClientDataPacket, PlayerData};
 use crate::server::packets::player::{OtherPlayerChatPacket, OtherPlayerJoinPacket, OtherPlayerMovePacket};
 use crate::server::packets::world::{MultiTileDestroyedPacket, MultiTilePlacedPacket, TerrainSetPacket, TileSetPacket};
 use crate::world::tiles::terrain::{WorldTerrain, TerrainTile};
-use crate::world::tiles::{create_tile, tile_to_client};
-use crate::world::tiles::tiles::{InnerTile, TileType};
+use crate::world::tiles::{create_tile, tile_to_client, TileType};
 
 pub const CHUNK_SIZE: i32 = 64;
 
@@ -62,10 +61,10 @@ pub const START_FORCE_ALLOWED: u16 = 9;
 
 #[derive(Savable)]
 pub struct WorldMeta {
-    name: String,
-    seed: u32,
-    max_forced_chunks: u16,
-    forced_chunks: HashSet<ChunkPos>,
+    pub name: String,
+    pub seed: u32,
+    pub max_forced_chunks: u16,
+    pub forced_chunks: HashSet<ChunkPos>,
 }
 
 impl WorldMeta {
@@ -341,20 +340,8 @@ impl World {
             broadcast_all_players(packet);
         }
 
-
-        let state = if let Some(s) = &rw.info.state {
-            let mut buf = ByteBuffer::new_le();
-            s.save_for_client(&mut buf);
-            buf.into_vec()
-        } else {
-            vec![]
-        };
-        let client_obj = ToClientObject {
-            id: rw.id as u16,
-            orientation: rw.info.orientation,
-            source: rw.info.source.clone(),
-            state
-        };
+        drop(rw);
+        let client_obj = tile_to_client(&tile);
 
         //also include the player that set the tile as his client only has the ghost block for now
         broadcast_all_players(ClientBoundPacket::TileSet(TileSetPacket {
@@ -377,7 +364,6 @@ impl World {
             let client_obj = ToClientObject {
                 id,
                 orientation,
-                source: template.info.source,
                 state: vec![]
             };
 
@@ -388,39 +374,11 @@ impl World {
             }));
         }
     }
-    
-    pub fn send_update(&mut self, pos: TilePos) {
-        let chunk_pos = pos.chunk_pos;
-        if self.is_loaded(chunk_pos) {
-            let chunk = self.get_chunk(chunk_pos);
-            let lock = chunk.lock();
-            let index = Chunk::get_index(&pos);
-            if let Some(tile) = &lock.tiles[index] {
-                let mut tile_lock = tile.write();
-                if let InnerTile::Update(updatable) = &mut tile_lock.info.inner {
-                    updatable.send_update(pos, self);
-                }
-            }
-        }
-    }
 
     pub fn sync_tilestate(&mut self, at: TilePos) {
         let tile = self.get_tile_at(at.clone());
         if let Some(tile) = tile {
-            let rw = tile.read();
-            let state = if let Some(s) = &rw.info.state {
-                let mut buf = ByteBuffer::new_le();
-                s.save_for_client(&mut buf);
-                buf.into_vec()
-            } else {
-                vec![]
-            };
-            let client_obj = ToClientObject {
-                id: rw.id as u16,
-                orientation: rw.info.orientation,
-                source: rw.info.source.clone(),
-                state
-            };
+            let client_obj = tile_to_client(&tile);
 
             broadcast_all_players(ClientBoundPacket::TileSet(TileSetPacket {
                 pos: at.clone(),
@@ -431,50 +389,15 @@ impl World {
     }
 
     pub fn tick(&mut self) {
-        let mut to_tick = Vec::new();
-        let mut tiles = Vec::new();
-        for chunk in self.loaded_chunks.values() {
-            let mut lock = chunk.lock();
-            for (tile, pos) in lock.iter_tiles() {
-                let tile_lock = tile.read();
-                if let InnerTile::Update(_) = &tile_lock.info.inner {
-                    tiles.push(tile.clone());
-                }
-                if tile_lock.info.should_tick {
-                    drop(tile_lock);
-                    to_tick.push(pos);
-                }
-            }
-        }
-        for pos in to_tick {
-            self.send_update(pos);
-        }
         
-        for tile in tiles {
-            let mut lock = tile.write();
-            match &mut lock.info.inner {
-                InnerTile::Static => {}
-                InnerTile::Update(update) => {
-                    update.end_tick();
-                }
-            }
-        }
     }
 
     pub fn check_packet(&mut self, packet: ServerBoundPacket, client: &Arc<ClientEndpoint>) -> Option<ServerBoundPacket> {
         let mut players = PLAYERS.write();
         match packet {
             ServerBoundPacket::TileSet(packet) => {
-                if let Some(mut tile) = TILE_REGISTRY.create_object(packet.tile_id) {
-                    tile.info.orientation = packet.orientation;
-                    if let Some((state)) = &mut tile.info.state {
-                        if !packet.tile_state.is_empty() {
-                            let mut loader = ByteBuffer::from_vec_le(packet.tile_state.clone());
-                            if let Err(e) = state.load_from_client(&mut loader) {
-                                warn!("Error when loading tile state from client: {e}");
-                            }
-                        }
-                    }
+                if let Some(mut tile) = TILE_REGISTRY.create_object(packet.tile_id as usize) {
+                    tile.instance.set_orientation(packet.orientation);
                     let player = players.get(&client.id()).cloned();
                     if let Some(player) = player {
                         let player_lock = player.lock();
@@ -489,8 +412,8 @@ impl World {
                         let before_id = self.get_tile_id_at(packet.pos.clone())
                             .unwrap_or_default();
 
-                        //check if the spot is already occupied
-                        let mut cancel_cond = before_id as usize != self.objects.tiles.air;
+                        //check if the spot is already occupied if we actually want to palce a non air tile
+                        let mut cancel_cond = before_id as usize != self.objects.tiles.air && packet.tile_id as usize != self.objects.tiles.air;
                         //check if the player has enough reach to place that block
                         cancel_cond |= dist > reach;
 

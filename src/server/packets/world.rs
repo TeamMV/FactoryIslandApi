@@ -3,9 +3,8 @@ use mvutils::Savable;
 use crate::multitile::MultiTilePlacement;
 use crate::player::uuid::UUID;
 use crate::world::chunk::{ToClientChunk, ToClientObject};
-use crate::world::tiles::Orientation;
+use crate::world::tiles::{Orientation, TileKind};
 use crate::world::tiles::pos::TilePos;
-use crate::world::tiles::tiles::TileType;
 
 #[derive(Savable, Clone)]
 pub struct TileSetPacket {
@@ -25,8 +24,7 @@ pub struct TerrainSetPacket {
 #[derive(Clone, Savable)]
 pub struct TileSetFromClientPacket {
     pub pos: TilePos,
-    pub tile_id: usize,
-    pub tile_state: Vec<u8>,
+    pub tile_id: TileKind,
     pub orientation: Orientation
 }
 

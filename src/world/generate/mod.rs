@@ -4,12 +4,11 @@ use crate::registry::terrain::TERRAIN_REGISTRY;
 use crate::registry::GameObjects;
 use crate::world::chunk::Chunk;
 use crate::world::generate::noise::GeneratorNoise;
-use crate::world::tiles::Orientation;
+use crate::world::tiles::{Orientation, TileType};
 use crate::world::CHUNK_SIZE;
 use mvutils::utils::{Map, MapTo};
 use parking_lot::lock_api::RwLock;
 use crate::registry::tiles::TILE_REGISTRY;
-use crate::world::tiles::tiles::TileType;
 
 pub trait ChunkGenerator {
     fn gen_orientation(seed: u32, x: i32, z: i32) -> u8 {

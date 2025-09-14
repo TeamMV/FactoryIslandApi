@@ -1,5 +1,5 @@
 use crate::registry::Registry;
-use crate::world::tiles::terrain::{TerrainTile, TerrainTileInfo};
+use crate::world::tiles::terrain::{TerrainTile};
 use mvutils::lazy;
 
 lazy! {
@@ -16,7 +16,7 @@ macro_rules! define_tiles {
         pub fn $func_name() -> $struct_name {
             $struct_name {
                 $(
-                    $tile_name: TERRAIN_REGISTRY.register(TerrainTileInfo::vanilla()),
+                    $tile_name: TERRAIN_REGISTRY.register(()),
                 )*
             }
         }

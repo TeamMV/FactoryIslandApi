@@ -6,11 +6,12 @@ use abi_stable::pmr::IsAccessible::No;
 use log::{debug, error, info, LevelFilter};
 use mvengine::net::server::Server;
 use mvutils::clock::Clock;
-use parking_lot::{Condvar, Mutex};
+use parking_lot::{Condvar, Mutex, RwLock};
 use std::io::{stdout, BufRead};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::{io, thread};
+use mvutils::lazy;
 
 pub type FactoryIslandServer = Server<ServerBoundPacket, ClientBoundPacket>;
 
@@ -75,14 +76,20 @@ impl ServerSync {
         }
     }
 }
+lazy! {
+    pub(crate) static REQ_WORLD: RwLock<Option<String>> = RwLock::new(None);
+}
 
-pub fn startup_internal_server(logger: bool, mut sync: ServerSync) {
+pub fn startup_internal_server(logger: bool, mut sync: ServerSync, world: Option<String>) {
     if logger {
         mvlogger::init(stdout(), LevelFilter::Debug);
     }
+    
+    *REQ_WORLD.write() = world;
 
     let mut server = FactoryIslandServer::new();
     let handler = server.listen::<FactoryIsland>(INTERNAL_PORT);
+    
     let mut clock = Clock::new(TPS);
 
     //listening for commands in console

@@ -1,25 +1,26 @@
 use bytebuffer::ByteBuffer;
 use mvutils::Savable;
 use mvutils::save::Savable;
-use crate::ingredients::IngredientStack;
 use crate::world::tiles::{Orientation, TileInstance};
 
 #[derive(Clone, Savable)]
-pub struct Conveyor {
+pub struct StaticTile {
     orientation: Orientation,
-    queue: [Option<IngredientStack>; 3],
+    health: f32,
+    max_health: f32
 }
 
-impl Conveyor {
-    pub fn new() -> Self {
+impl StaticTile {
+    pub fn new(max_health: f32) -> Self {
         Self {
             orientation: Orientation::North,
-            queue: [None, None, None],
+            health: max_health,
+            max_health,
         }
     }
 }
 
-impl TileInstance for Conveyor {
+impl TileInstance for StaticTile {
     fn save(&self, saver: &mut ByteBuffer) {
         Savable::save(self, saver);
     }
@@ -38,7 +39,8 @@ impl TileInstance for Conveyor {
     }
 
     fn save_client_state(&self, saver: &mut ByteBuffer) {
-        self.queue.save(saver);
+        self.health.save(saver);
+        self.max_health.save(saver);
     }
 
     fn orientation(&self) -> Orientation {

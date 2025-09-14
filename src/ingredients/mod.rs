@@ -1,12 +1,10 @@
-pub mod meta;
-
 use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
 use log::{error, warn};
 use mvutils::Savable;
 use parsing::xml::{parse_rsx, Entity, XmlValue};
-use meta::IngredientMeta;
-use crate::ingredients::meta::{MetaField, MetaValue};
+use crate::meta::Meta;
+use crate::meta::{MetaField, MetaValue};
 use crate::registry::ingredients::INGREDIENT_REGISTRY;
 use crate::registry::Registerable;
 use crate::unit::parsing::parse_number_and_unit;
@@ -16,31 +14,31 @@ use crate::utils::AssertOnFalse;
 #[derive(Clone)]
 pub struct Ingredient {
     kind: IngredientKind,
-    static_meta: IngredientMeta,
-    default_dynamic_meta: IngredientMeta,
+    static_meta: Meta,
+    default_dynamic_meta: Meta,
 }
 
 pub struct IngredientCreator {
-    static_m: IngredientMeta,
-    dynamic_m: IngredientMeta
+    static_m: Meta,
+    dynamic_m: Meta
 }
 
 impl IngredientCreator {
-    pub fn new(static_m: IngredientMeta, dynamic_m: IngredientMeta) -> Self {
+    pub fn new(static_m: Meta, dynamic_m: Meta) -> Self {
         Self { static_m, dynamic_m }
     }
 
     pub fn build() -> Self {
         Self {
-            static_m: IngredientMeta::new(),
-            dynamic_m: IngredientMeta::new(),
+            static_m: Meta::new(),
+            dynamic_m: Meta::new(),
         }
     }
 
     pub fn with_static_num(mut self, key: &str, num: f32, unit: Unit) -> Self {
         self.static_m.set(key, MetaField {
             key: key.to_string(),
-            value: MetaValue::Number(num),
+            value: MetaValue::Float(num),
             unit,
         });
         self
@@ -58,7 +56,7 @@ impl IngredientCreator {
     pub fn with_dynamic_num(mut self, key: &str, num: f32, unit: Unit) -> Self {
         self.dynamic_m.set(key, MetaField {
             key: key.to_string(),
-            value: MetaValue::Number(num),
+            value: MetaValue::Float(num),
             unit,
         });
         self
@@ -78,7 +76,7 @@ impl IngredientCreator {
         if let XmlValue::Str(s) = value {
             s.clone()
         } else {
-            panic!("{name} is not a valid attribute for ingredient!")
+            panic!("{name} is not a valid attribute for ingredient!");
         }
     }
 
@@ -93,9 +91,9 @@ impl IngredientCreator {
         }
     }
 
-    fn tree_to_meta(en: &Entity) -> IngredientMeta {
+    fn tree_to_meta(en: &Entity) -> Meta {
         if let Some(XmlValue::Entities(e)) = en.inner() {
-            let mut meta = IngredientMeta::new();
+            let mut meta = Meta::new();
             for inner in e {
                 (inner.name() == "meta").assert("ingredient meta is composed of <meta> tags!");
                 let name = Self::get_attrib(inner, "name");
@@ -104,7 +102,7 @@ impl IngredientCreator {
                 let result = parse_number_and_unit(&val);
 
                 let (value, unit) = match result {
-                    Ok((value, unit)) => (MetaValue::Number(value), unit),
+                    Ok((value, unit)) => (MetaValue::Float(value), unit),
                     Err(s) => (MetaValue::Str(s), Unit::None),
                 };
 
@@ -117,7 +115,7 @@ impl IngredientCreator {
             }
             meta
         } else {
-            IngredientMeta::new()
+            Meta::new()
         }
     }
 
@@ -148,11 +146,11 @@ impl Registerable for Ingredient {
 
 pub type IngredientKind = usize;
 
-#[derive(Clone)]
+#[derive(Clone, Savable, PartialEq)]
 pub struct IngredientStack {
     pub ingredient: IngredientKind,
     pub amount: u64,
-    pub meta: IngredientMeta
+    pub meta: Meta
 }
 
 impl IngredientStack {
@@ -168,7 +166,7 @@ impl IngredientStack {
             Self {
                 ingredient,
                 amount,
-                meta: IngredientMeta::new(),
+                meta: Meta::new(),
             }
         }
     }
@@ -179,7 +177,7 @@ impl IngredientStack {
             self.amount.checked_add(other.amount).is_some()
     }
 
-    pub fn get_static_meta(&self) -> &IngredientMeta {
+    pub fn get_static_meta(&self) -> &Meta {
         if let Some(ing) = INGREDIENT_REGISTRY.reference_object(self.ingredient) {
             &ing.static_meta
         } else {
