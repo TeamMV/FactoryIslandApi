@@ -18,6 +18,12 @@ pub struct Ingredient {
     default_dynamic_meta: Meta,
 }
 
+impl Ingredient {
+    pub fn static_meta(&self) -> &Meta {
+        &self.static_meta
+    }
+}
+
 pub struct IngredientCreator {
     static_m: Meta,
     dynamic_m: Meta

@@ -1,7 +1,9 @@
+use std::fmt::Display;
 use crate::inventory::InventoryData;
 use crate::unit::Unit;
 use hashbrown::HashMap;
 use mvutils::Savable;
+use mvutils::utils::TetrahedronOp;
 
 #[derive(Savable, PartialEq, Clone, Debug)]
 pub struct Meta {
@@ -26,6 +28,10 @@ impl Meta {
     pub fn get_mut(&mut self, key: &str) -> Option<&mut MetaField> {
         self.fields.get_mut(key)
     }
+
+    pub fn iter(&self) -> impl Iterator<Item=(&String, &MetaField)> {
+        self.fields.iter()
+    }
 }
 
 #[derive(Savable, PartialEq, Clone, Debug)]
@@ -33,6 +39,25 @@ pub struct MetaField {
     pub key: String,
     pub value: MetaValue,
     pub unit: Unit,
+}
+
+impl Display for MetaField {
+    fn fmt(&self, f1: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match &self.value {
+            MetaValue::Str(s) => s.clone(),
+            MetaValue::Bool(b) => b.yn("True", "False").to_string(),
+            MetaValue::Integer(i) => {
+                let base = self.unit.to_base(*i as f64);
+                self.unit.format_value(base)
+            }
+            MetaValue::Float(f) => {
+                let base = self.unit.to_base(*f as f64);
+                self.unit.format_value(base)
+            }
+            MetaValue::Inventory(_) => "Inner data".to_string(),
+        };
+        write!(f1, "{}", str)
+    }
 }
 
 #[derive(Savable, PartialEq, Clone, Debug)]

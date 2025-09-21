@@ -1,8 +1,13 @@
 <ingredient>
     <static>
         <meta name="melting_point" val="1500K"/>
+        <meta name="value_1" val="52.2kg" />
+        <meta name="value_2" val="0.000000000532624123A" />
+        <meta name="molar_Value" val="2.755e24mol" />
+        <meta name="val_3" val="0.000512434cm" />
     </static>
     <dynamic>
         <meta name="temperature" val="298K"/>
+        <meta name="length" val="1523.5m" />
     </dynamic>
 </ingredient>

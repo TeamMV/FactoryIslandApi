@@ -26,19 +26,23 @@ impl ChunkManager {
                 return None;
             }
 
-            if let Ok(decompressed) = decompress_size_prepended(compressed.as_slice()) {
-                let mut buffer = ByteBuffer::from(decompressed);
+            match decompress_size_prepended(compressed.as_slice()) {
+                Ok(decompressed) => {
+                    let mut buffer = ByteBuffer::from(decompressed);
 
-                debug!("loaded chunk {chunk_pos:?}");
+                    debug!("loaded chunk {chunk_pos:?}");
 
-                let mut chunk = Chunk::load(&mut buffer).ok()?;
-                chunk.generate_terrain(world.generator(), world.objects());
-                chunk.terrain.apply_modifications();
-                Some(SaveArc::new(Mutex::new(chunk)))
-            } else {
-                error!("Error decompressing chunk file");
-                None
+                    let mut chunk = Chunk::load(&mut buffer).ok()?;
+                    chunk.generate_terrain(world.generator(), world.objects());
+                    chunk.terrain.apply_modifications();
+                    Some(SaveArc::new(Mutex::new(chunk)))
+                }
+                Err(err) => {
+                    error!("Error decompressing chunk file: {err}");
+                    None
+                }
             }
+
         } else {
             None
         }
@@ -53,7 +57,12 @@ impl ChunkManager {
 
             let compressed = compress_prepend_size(buffer.as_bytes());
 
-            file.write_all(compressed.as_slice()).expect("Failed to write to file");
+            if let Err(e) = file.write_all(compressed.as_slice()) {
+                error!("Error when writing chunk file: {e:?}");
+            }
+            if let Err(e) = file.flush() {
+                error!("Error when flushing chunk file: {e:?}");
+            }
             debug!("Saved chunk {:?}", chunk.position);
         } else {
             error!("failed to create or open file: {:?} in {:?}", filename, dir);

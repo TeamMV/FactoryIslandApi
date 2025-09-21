@@ -95,15 +95,15 @@ impl PacketHandler {
                     // TODO!: gasp alarm
                 } else {
                     // This is very temporary code, this isn't how we actually open inventories
-                    let mut inventory = InventoryData::new(10, 3, true);
+                    let mut inventory = InventoryData::new(10, 6, false);
                     inventory.add_stack(IngredientStack::new(fi.objects.ingredients.stone, 1));
 
-                    for i in 0..20 {
+                    for i in 0..45 {
                         inventory.stacks.push(IngredientStack::new(fi.objects.ingredients.stone, 1));
                         inventory.current_amt += 1;
                     }
 
-                    let mut second_inv = InventoryData::new(20, 6, true);
+                    let mut second_inv = InventoryData::new(20, 3, true);
                     second_inv.add_stack(IngredientStack::new(fi.objects.ingredients.stone, 5));
 
                     client.send(ClientBoundPacket::InventoryDataPacket(InventoryDataPacket {
