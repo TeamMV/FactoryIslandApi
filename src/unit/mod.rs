@@ -1,236 +1,265 @@
-pub mod parsing;
+pub mod format;
 
-use mvutils::Savable;
+use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-pub const KELVIN_CELSIUS_OFFSET: f32 = 273.15;
+use fi_proc::unit_expr;
 
-#[derive(Savable, PartialEq, Clone, Copy, Debug)]
-pub enum Unit {
-    None,
-    Meters(UnitPrefix),
-    Seconds(UnitPrefix),
-    Grams(UnitPrefix),
-    Amps(UnitPrefix),
-    Kelvin(UnitPrefix),
-    Moles(UnitPrefix),
-
-    // compound units
-    // BeardFornightsPerFortnight(UnitPrefix), // m s^-1
-    // BeardFornightsPerFortnightPerFornight(UnitPrefix), // m s^-2
-    // GrainBeardFornightsPerFortnightPerFornight(UnitPrefix), // kg m s^-2
-    // GrainBeardFornightsBeardFornightsPerFortnightPerFornight(UnitPrefix), // kg m^2 s^-2
-    // GrainBeardFornightsBeardFornightsPerFortnightPerFornightPerFornight(UnitPrefix), // kg m^2 s^-3
-    // GrainBeardFornightsBeardFornightsPerFortnightPerFornightPerFornightPerAmps(UnitPrefix), // kg m^2 s^-3 A^-1
-    // GrainBeardFornightsBeardFornightsPerFortnightPerFornightPerFornightPerAmpsPerAmps(UnitPrefix), // kg m^2 s^-3 A^-2
-
+pub trait NewQuantity {
+    /// Used in internal function implementations, use `Quantity::new` instead of this
+    fn new_quantity(value: f64) -> Self;
 }
 
-impl Unit {
-    pub fn set_prefix(&mut self, p: UnitPrefix) {
-        match self {
-            Unit::None => {}
-            Unit::Meters(old) => *old = p,
-            Unit::Seconds(old) => *old = p,
-            Unit::Grams(old) => *old = p,
-            Unit::Amps(old) => *old = p,
-            Unit::Kelvin(old) => *old = p,
-            Unit::Moles(old) => *old = p,
-        }
-    }
+pub trait SumType<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8, const D2: i8, const T2: i8, const M2: i8, const K2: i8, const I2: i8, const N2: i8, const DR: i8, const TR: i8, const MR: i8, const KR: i8, const IR: i8, const NR: i8> {
+    type SumType: NewQuantity;
+}
 
-    pub fn base_symbol(self) -> &'static str {
-        match self {
-            Unit::None        => "",
-            Unit::Meters(_)   => "m",
-            Unit::Seconds(_)  => "s",
-            Unit::Grams(_)    => "g",
-            Unit::Amps(_)     => "A",
-            Unit::Kelvin(_)   => "K",
-            Unit::Moles(_)    => "mol",
-        }
-    }
+pub trait DiffType<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8, const D2: i8, const T2: i8, const M2: i8, const K2: i8, const I2: i8, const N2: i8, const DR: i8, const TR: i8, const MR: i8, const KR: i8, const IR: i8, const NR: i8> {
+    type DiffType: NewQuantity;
+}
 
-    pub fn current_prefix(self) -> UnitPrefix {
-        match self {
-            Unit::None => UnitPrefix::None,
-            Unit::Meters(p)
-            | Unit::Seconds(p)
-            | Unit::Grams(p)
-            | Unit::Amps(p)
-            | Unit::Kelvin(p)
-            | Unit::Moles(p) => p,
-        }
-    }
+pub trait True {}
+impl True for [(); 1] {}
 
-    pub fn preferred_prefixes(self) -> &'static [UnitPrefix] {
-        match self {
-            Unit::None => &[],
-            Unit::Meters(_) => &[
-                UnitPrefix::Nano, UnitPrefix::Micro, UnitPrefix::Milli, UnitPrefix::Centi, UnitPrefix::None, UnitPrefix::Kilo,
-            ],
-            Unit::Seconds(_) => &[
-                UnitPrefix::Nano, UnitPrefix::Micro, UnitPrefix::Milli, UnitPrefix::None,
-            ],
-            Unit::Grams(_) => &[
-                UnitPrefix::Nano, UnitPrefix::Micro, UnitPrefix::Milli, UnitPrefix::None, UnitPrefix::Kilo,
-            ],
-            Unit::Amps(_) => &[
-                UnitPrefix::Milli, UnitPrefix::None, UnitPrefix::Kilo,
-            ],
-            Unit::Kelvin(_) => &[
-                UnitPrefix::None,
-            ],
-            Unit::Moles(_) => &[
-                UnitPrefix::Milli, UnitPrefix::None,
-            ],
-        }
-    }
+pub struct Divisible<const A: i8, const B: i8>;
+impl<const A: i8, const B: i8> True for Divisible<A, B> where [(); (A % B == 0) as usize ]: True {}
 
-    pub fn pick_display_prefix(self, value_in_base: f64) -> UnitPrefix {
-        let abs = value_in_base.abs();
-        if abs == 0.0 {
-            return match self {
-                Unit::Kelvin(_) => UnitPrefix::None,
-                _ => UnitPrefix::None,
-            };
-        }
+// These will most likely never be needed, but if they ever are they exist :)
+pub struct Equal<const A: i8, const B: i8>;
+impl<const A: i8, const B: i8> True for Equal<A, B> where [(); (A == B) as usize ]: True {}
 
-        let candidates = self.preferred_prefixes();
-        for &p in candidates {
-            let scaled = abs / p.factor();
-            if scaled >= 1.0 && scaled < 1000.0 {
-                return p;
-            }
-        }
+pub struct NotEqual<const A: i8, const B: i8>;
+impl<const A: i8, const B: i8> True for NotEqual<A, B> where [(); (A != B) as usize ]: True {}
 
-        if abs >= candidates.last().unwrap().factor() {
-            *candidates.last().unwrap()
-        } else {
-            *candidates.first().unwrap()
-        }
-    }
+pub struct Greater<const A: i8, const B: i8>;
+impl<const A: i8, const B: i8> True for Greater<A, B> where [(); (A > B) as usize ]: True {}
 
-    pub fn format_value(self, value_in_base: f64) -> String {
-        let prefix = self.pick_display_prefix(value_in_base);
-        let scaled = value_in_base / prefix.factor();
+pub struct Less<const A: i8, const B: i8>;
+impl<const A: i8, const B: i8> True for Less<A, B> where [(); (A < B) as usize ]: True {}
 
-        let txt = pretty_number(scaled);
-        let unit_txt = format!("{}{}", prefix.symbol(), self.base_symbol());
+pub struct GreaterOrEqual<const A: i8, const B: i8>;
+impl<const A: i8, const B: i8> True for GreaterOrEqual<A, B> where [(); (A >= B) as usize ]: True {}
 
-        if unit_txt.is_empty() { txt } else { format!("{txt}{unit_txt}") }
-    }
+pub struct LessOrEqual<const A: i8, const B: i8>;
+impl<const A: i8, const B: i8> True for LessOrEqual<A, B> where [(); (A <= B) as usize ]: True {}
 
-    pub fn to_base(self, raw: f64) -> f64 {
-        raw * self.current_prefix().factor()
+pub type Dimension = [i8; 6];
+
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
+pub struct Quantity<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8> {
+    pub value: f64,
+}
+
+impl<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8> NewQuantity for Quantity<D, T, M, K, I, N> {
+    fn new_quantity(value: f64) -> Self {
+        Quantity { value }
     }
 }
 
-fn pretty_number(x: f64) -> String {
-    if x == 0.0 {
-        return "0".to_string();
-    }
-
-    let abs = x.abs();
-    let exp10 = abs.log10().floor() as i32;
-
-    let use_plain = exp10 >= -3 && exp10 < 6;
-
-    if use_plain {
-        let digits_before = if abs >= 1.0 { (abs.log10().floor() as i32 + 1) as usize } else { 0 };
-        let sig_figs = 3usize;
-        let mut dec = sig_figs.saturating_sub(digits_before);
-        if dec > 4 { dec = 4; }
-        let s = format!("{:.*}", dec, x);
-        return trim_trailing_zeros(&s);
-    }
-
-    let mant = x / 10f64.powi(exp10);
-    let s = format!("{:.3}", mant);
-    let mant_txt = trim_trailing_zeros(&s);
-
-    format!("{mant_txt}×10^{exp10}")
+impl<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8, const D2: i8, const T2: i8, const M2: i8, const K2: i8, const I2: i8, const N2: i8> SumType<D, T, M, K, I, N, D2, T2, M2, K2, I2, N2, { D + D2 }, { T + T2 }, { M + M2 }, { K + K2 }, { I + I2 }, { N + N2 }> for Quantity<D, T, M, K, I, N> {
+    type SumType = Quantity<{ D + D2 }, { T + T2 }, { M + M2 }, { K + K2 }, { I + I2 }, { N + N2 }>;
 }
 
-fn trim_trailing_zeros(s: &str) -> String {
-    if let Some(dot) = s.find('.') {
-        let (int, frac) = s.split_at(dot);
-        let mut frac = &frac[1..]; // drop the dot
-        frac = frac.trim_end_matches('0');
-        if frac.is_empty() {
-            int.to_string()
-        } else {
-            format!("{int}.{frac}")
-        }
-    } else {
-        s.to_string()
+impl<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8, const D2: i8, const T2: i8, const M2: i8, const K2: i8, const I2: i8, const N2: i8> DiffType<D, T, M, K, I, N, D2, T2, M2, K2, I2, N2, { D - D2 }, { T - T2 }, { M - M2 }, { K - K2 }, { I - I2 }, { N - N2 }> for Quantity<D, T, M, K, I, N> {
+    type DiffType = Quantity<{ D - D2 }, { T - T2 }, { M - M2 }, { K - K2 }, { I - I2 }, { N - N2 }>;
+}
+
+impl<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8>
+Quantity<D, T, M, K, I, N>
+{
+    pub const fn dimension() -> Dimension {
+        [D, T, M, K, I, N]
+    }
+
+    pub fn new(value: f64) -> Quantity<D, T, M, K, I, N> {
+        Quantity { value }
+    }
+
+    pub fn value(&self) -> f64 { self.value }
+
+    pub fn set_value(&mut self, value: f64) { self.value = value }
+
+    pub fn powi<const P: i8>(self) -> Quantity<{ D * P }, { T * P }, { M * P }, { K * P }, { I * P }, { N * P }> {
+        Quantity::new(self.value.powi(P as i32))
     }
 }
 
-#[derive(Savable, PartialEq, Clone, Copy, Debug)]
-pub enum UnitPrefix {
-    Femto,
-    Pico,
-    Nano,
-    Micro,
-    Milli,
-    Centi,
-    Deci,
-    None,
-    Kilo,
-    Mega,
-    Giga,
-    Tera,
-}
-
-impl UnitPrefix {
-    pub fn power_of_ten(&self) -> i8 {
-        match self {
-            UnitPrefix::Femto => -15,
-            UnitPrefix::Pico => -12,
-            UnitPrefix::Nano => -9,
-            UnitPrefix::Micro => -6,
-            UnitPrefix::Milli => -3,
-            UnitPrefix::Centi => -2,
-            UnitPrefix::Deci => -1,
-            UnitPrefix::None => 0,
-            UnitPrefix::Kilo => 3,
-            UnitPrefix::Mega => 6,
-            UnitPrefix::Giga => 9,
-            UnitPrefix::Tera => 12,
-        }
-    }
-
-    pub fn factor(self) -> f64 {
-        match self {
-            UnitPrefix::Femto => 1e-15,
-            UnitPrefix::Pico  => 1e-12,
-            UnitPrefix::Nano  => 1e-9,
-            UnitPrefix::Micro => 1e-6,
-            UnitPrefix::Milli => 1e-3,
-            UnitPrefix::Centi => 1e-2,
-            UnitPrefix::Deci  => 1e-1,
-            UnitPrefix::None  => 1.0,
-            UnitPrefix::Kilo  => 1e3,
-            UnitPrefix::Mega  => 1e6,
-            UnitPrefix::Giga  => 1e9,
-            UnitPrefix::Tera  => 1e12,
-        }
-    }
-
-    pub fn symbol(self) -> &'static str {
-        match self {
-            UnitPrefix::Femto => "f",
-            UnitPrefix::Pico  => "p",
-            UnitPrefix::Nano  => "n",
-            UnitPrefix::Micro => "µ",
-            UnitPrefix::Milli => "m",
-            UnitPrefix::Centi => "c",
-            UnitPrefix::Deci  => "d",
-            UnitPrefix::None  => "",
-            UnitPrefix::Kilo  => "k",
-            UnitPrefix::Mega  => "M",
-            UnitPrefix::Giga  => "G",
-            UnitPrefix::Tera  => "T",
-        }
+impl<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8>
+Quantity<D, T, M, K, I, N> where
+    Divisible<D, 2>: True,
+    Divisible<T, 2>: True,
+    Divisible<M, 2>: True,
+    Divisible<K, 2>: True,
+    Divisible<I, 2>: True,
+    Divisible<N, 2>: True
+{
+    pub fn sqrt(self) -> Quantity<{ D / 2 }, { T / 2 }, { M / 2 }, { K / 2 }, { I / 2 }, { N / 2 }> {
+        Quantity::new(self.value.sqrt())
     }
 }
+
+impl<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8>
+Quantity<D, T, M, K, I, N> where
+    Divisible<D, 3>: True,
+    Divisible<T, 3>: True,
+    Divisible<M, 3>: True,
+    Divisible<K, 3>: True,
+    Divisible<I, 3>: True,
+    Divisible<N, 3>: True
+{
+    pub fn cbrt(self) -> Quantity<{ D / 3 }, { T / 3 }, { M / 3 }, { K / 3 }, { I / 3 }, { N / 3 }> {
+        Quantity::new(self.value.cbrt())
+    }
+}
+
+impl<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8> From<f64> for Quantity<D, T, M, K, I, N> {
+    fn from(value: f64) -> Self {
+        Quantity::new(value)
+    }
+}
+
+impl<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8> Add for Quantity<D, T, M, K, I, N> {
+    type Output = Quantity<D, T, M, K, I, N>;
+
+    fn add(self, rhs: Quantity<D, T, M, K, I, N>) -> Self::Output {
+        Quantity::new(self.value + rhs.value)
+    }
+}
+
+impl<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8> AddAssign for Quantity<D, T, M, K, I, N> {
+    fn add_assign(&mut self, rhs: Self) {
+        self.value += rhs.value;
+    }
+}
+
+impl<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8> Sub for Quantity<D, T, M, K, I, N> {
+    type Output = Quantity<D, T, M, K, I, N>;
+
+    fn sub(self, rhs: Quantity<D, T, M, K, I, N>) -> Self::Output {
+        Quantity::new(self.value - rhs.value)
+    }
+}
+
+impl<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8> SubAssign for Quantity<D, T, M, K, I, N> {
+    fn sub_assign(&mut self, rhs: Self) {
+        self.value -= rhs.value;
+    }
+}
+
+impl<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8> Neg for Quantity<D, T, M, K, I, N> {
+    type Output = Quantity<D, T, M, K, I, N>;
+
+    fn neg(self) -> Self::Output {
+        Quantity::new(-self.value)
+    }
+}
+
+impl<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8, const D2: i8, const T2: i8, const M2: i8, const K2: i8, const I2: i8, const N2: i8> Mul<Quantity<D2, T2, M2, K2, I2, N2>> for Quantity<D, T, M, K, I, N> where Quantity<D, T, M, K, I, N>: SumType<D, T, M, K, I, N, D2, T2, M2, K2, I2, N2, { D + D2 }, { T + T2 }, { M + M2 }, { K + K2 }, { I + I2 }, { N + N2 }> {
+    type Output = <Quantity<D, T, M, K, I, N> as SumType<D, T, M, K, I, N, D2, T2, M2, K2, I2, N2, { D + D2 }, { T + T2 }, { M + M2 }, { K + K2 }, { I + I2 }, { N + N2 }>>::SumType;
+
+    fn mul(self, rhs: Quantity<D2, T2, M2, K2, I2, N2>) -> Self::Output {
+        Self::Output::new_quantity(self.value * rhs.value)
+    }
+}
+
+impl<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8> Mul<f64> for Quantity<D, T, M, K, I, N> {
+    type Output = Quantity<D, T, M, K, I, N>;
+
+    fn mul(self, rhs: f64) -> Self::Output {
+        Quantity::new(self.value * rhs)
+    }
+}
+
+impl<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8> Mul<Quantity<D, T, M, K, I, N>> for f64 {
+    type Output = Quantity<D, T, M, K, I, N>;
+
+    fn mul(self, rhs: Quantity<D, T, M, K, I, N>) -> Self::Output {
+        Quantity::new(self * rhs.value)
+    }
+}
+
+impl<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8> MulAssign<Quantity<0, 0, 0, 0, 0, 0>> for Quantity<D, T, M, K, I, N> {
+    fn mul_assign(&mut self, rhs: Quantity<0, 0, 0, 0, 0, 0>) {
+        self.value *= rhs.value;
+    }
+}
+
+impl<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8, const D2: i8, const T2: i8, const M2: i8, const K2: i8, const I2: i8, const N2: i8> Div<Quantity<D2, T2, M2, K2, I2, N2>> for Quantity<D, T, M, K, I, N> where Quantity<D, T, M, K, I, N>: DiffType<D, T, M, K, I, N, D2, T2, M2, K2, I2, N2, { D - D2 }, { T - T2 }, { M - M2 }, { K - K2 }, { I - I2 }, { N - N2 }> {
+    type Output = <Quantity<D, T, M, K, I, N> as DiffType<D, T, M, K, I, N, D2, T2, M2, K2, I2, N2, { D - D2 }, { T - T2 }, { M - M2 }, { K - K2 }, { I - I2 }, { N - N2 }>>::DiffType;
+
+    fn div(self, rhs: Quantity<D2, T2, M2, K2, I2, N2>) -> Self::Output {
+        Self::Output::new_quantity(self.value / rhs.value)
+    }
+}
+
+impl<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8> Div<f64> for Quantity<D, T, M, K, I, N> {
+    type Output = Quantity<D, T, M, K, I, N>;
+
+    fn div(self, rhs: f64) -> Self::Output {
+        Quantity::new(self.value / rhs)
+    }
+}
+
+impl<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8> DivAssign<Quantity<0, 0, 0, 0, 0, 0>> for Quantity<D, T, M, K, I, N> {
+    fn div_assign(&mut self, rhs: Quantity<0, 0, 0, 0, 0, 0>) {
+        self.value /= rhs.value;
+    }
+}
+
+pub type Unitless = Quantity<0, 0, 0, 0, 0, 0>;
+pub type Distance = Quantity<1, 0, 0, 0, 0, 0>;
+pub type Time = Quantity<0, 1, 0, 0, 0, 0>;
+pub type Mass = Quantity<0, 0, 1, 0, 0, 0>;
+pub type Temperature = Quantity<0, 0, 0, 1, 0, 0>;
+pub type Current = Quantity<0, 0, 0, 0, 1, 0>;
+pub type Amount = Quantity<0, 0, 0, 0, 0, 1>;
+
+pub type Area = unit_expr!(Distance * Distance);
+pub type Volume = unit_expr!(Area * Distance);
+pub type Velocity = unit_expr!(Distance / Time);
+pub type Acceleration = unit_expr!(Velocity / Time);
+pub type Jerk = unit_expr!(Acceleration / Time);
+pub type Wavenumber = unit_expr!(Unitless / Distance);
+pub type Frequency = unit_expr!(Unitless / Time);
+pub type Momentum = unit_expr!(Mass * Velocity);
+pub type Force = unit_expr!(Mass * Acceleration);
+pub type Pressure = unit_expr!(Force / Area);
+pub type Energy = unit_expr!(Force * Distance);
+pub type Power = unit_expr!(Energy / Time);
+pub type Torque = unit_expr!(Force * Distance);
+pub type Impulse = unit_expr!(Force * Time);
+pub type Density = unit_expr!(Mass / Volume);
+pub type MolarMass = unit_expr!(Mass / Amount);
+pub type SpecificEnergy = unit_expr!(Energy / Mass);
+pub type MolarEnergy = unit_expr!(Energy / Amount);
+pub type HeatCapacity = unit_expr!(Energy / Temperature);
+pub type SpecificHeatCapacity = unit_expr!(Energy / (Mass * Temperature));
+pub type MolarHeatCapacity = unit_expr!(Energy / (Amount * Temperature));
+pub type ThermalConductivity = unit_expr!(Power / (Distance * Temperature));
+pub type Concentration = unit_expr!(Amount / Volume);
+pub type Molality = unit_expr!(Amount / Mass);
+pub type ReactionRate = unit_expr!(Amount / (Volume * Time));
+pub type ChemicalPotential = unit_expr!(Energy / Amount);
+pub type Charge = unit_expr!(Current * Time);
+pub type Voltage = unit_expr!(Power / Current);
+pub type Resistance = unit_expr!(Voltage / Current);
+pub type Conductance = unit_expr!(Current / Voltage);
+pub type Resistivity = unit_expr!(Resistance * Distance);
+pub type Conductivity = unit_expr!(Conductance / Distance);
+pub type Capacitance = unit_expr!(Charge / Voltage);
+
+pub type Meters = Distance;
+pub type Seconds = Time;
+pub type Kilograms = Mass;
+pub type Kelvin = Temperature;
+pub type Amps = Current;
+pub type Moles = Amount;
+
+pub type Newtons = Force;
+pub type Pascals = Pressure;
+pub type Joules = Energy;
+pub type Watts = Power;
+pub type Coulombs = Charge;
+pub type Volts = Voltage;
+pub type Ohms = Resistance;
+pub type Siemens = Conductance;
+pub type Farads = Capacitance;

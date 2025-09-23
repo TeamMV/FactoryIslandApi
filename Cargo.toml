@@ -16,6 +16,7 @@ mvutils = "1.5.9"
 mvengine = { path = "../../MVEngine" }
 mvengine_proc = { path = "../../MVEngine/Proc", package = "mvengine-proc-macro" }
 parsing = {path = "../../MVEngine/Parsing", package = "mvengine-ui-parsing"}
+fi_proc = {path = "Proc", package = "fi-proc-macro"}
 
 log = "0.4.25"
 parking_lot = "0.12.3"

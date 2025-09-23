@@ -1,5 +1,7 @@
 #![feature(map_try_insert)]
 #![feature(try_trait_v2)]
+#![feature(generic_const_exprs)]
+#![allow(incomplete_features)]
 
 use crate::command::{CommandProcessor, CommandSender, COMMAND_PROCESSOR};
 use crate::player::{Player, PlayerType};

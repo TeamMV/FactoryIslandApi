@@ -1,0 +1,9 @@
+/home/mqxf/Desktop/Coding/Rust/FactoryIsland/Api/Proc/target/debug/deps/tstr_proc_macros-be568740606922e8.d: /home/mqxf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tstr_proc_macros-0.2.2/src/lib.rs /home/mqxf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tstr_proc_macros-0.2.2/src/non_syn_parsing.rs /home/mqxf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tstr_proc_macros-0.2.2/src/nested_tuple_compute.rs /home/mqxf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tstr_proc_macros-0.2.2/src/utils.rs /home/mqxf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tstr_proc_macros-0.2.2/src/no_const_generics.rs
+
+/home/mqxf/Desktop/Coding/Rust/FactoryIsland/Api/Proc/target/debug/deps/libtstr_proc_macros-be568740606922e8.so: /home/mqxf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tstr_proc_macros-0.2.2/src/lib.rs /home/mqxf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tstr_proc_macros-0.2.2/src/non_syn_parsing.rs /home/mqxf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tstr_proc_macros-0.2.2/src/nested_tuple_compute.rs /home/mqxf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tstr_proc_macros-0.2.2/src/utils.rs /home/mqxf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tstr_proc_macros-0.2.2/src/no_const_generics.rs
+
+/home/mqxf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tstr_proc_macros-0.2.2/src/lib.rs:
+/home/mqxf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tstr_proc_macros-0.2.2/src/non_syn_parsing.rs:
+/home/mqxf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tstr_proc_macros-0.2.2/src/nested_tuple_compute.rs:
+/home/mqxf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tstr_proc_macros-0.2.2/src/utils.rs:
+/home/mqxf/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tstr_proc_macros-0.2.2/src/no_const_generics.rs:
