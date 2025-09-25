@@ -1,6 +1,6 @@
 use hashbrown::HashMap;
 use mvutils::lazy;
-use crate::unit::{Dimension, Quantity};
+use crate::unit::{Acceleration, Amps, Area, Concentration, Coulombs, Density, Dimension, Farads, Frequency, Joules, Kelvin, Kilograms, Meters, Molality, MolarEnergy, MolarMass, Moles, Momentum, Newtons, Ohms, Pascals, Quantity, Resistance, Seconds, Siemens, SpecificEnergy, SpecificHeatCapacity, ThermalConductivity, Torque, Unitless, Velocity, Volts, Volume, Watts};
 
 #[derive(Clone, Copy)]
 pub struct FormatOptions {
@@ -58,22 +58,41 @@ struct Alias {
 
 lazy! {
     pub static UNIT_ALIASES: HashMap<Dimension, Alias> = HashMap::from([
-        ([ 2, -2,  1,  0,  0,  0], Alias { sym: "J",    policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
-        ([ 2, -3,  1,  0,  0,  0], Alias { sym: "W",    policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
-        ([ 1, -2,  1,  0,  0,  0], Alias { sym: "N",    policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
-        ([-1, -2,  1,  0,  0,  0], Alias { sym: "Pa",   policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
-        ([ 1,  0,  0,  0,  0,  0], Alias { sym: "m",    policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
-        ([ 0,  1,  0,  0,  0,  0], Alias { sym: "s",    policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
-        ([ 0,  0,  1,  0,  0,  0], Alias { sym: "kg",   policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
-        ([ 0,  0,  0,  1,  0,  0], Alias { sym: "K",    policy:PrefixPolicy::Small, power: 1, factor: 1.0 }),
-        ([ 0,  0,  0,  0,  1,  0], Alias { sym: "A",    policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
-        ([ 0,  0,  0,  0,  0,  1], Alias { sym: "mol",  policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
-        ([ 1, -1,  0,  0,  0,  0], Alias { sym: "m/s",  policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
-        ([ 0, -1,  1,  0,  0,  0], Alias { sym: "Pa·s", policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
-        ([ 0,  0,  1, -1, -1,  0], Alias { sym: "Ω·m",  policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
-        ([ 0,  0, -1,  0,  1,  0], Alias { sym: "S/m",  policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
-        ([ 2, -3,  1,  0, -1,  0], Alias { sym: "V",    policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
-        ([ 0,  0,  0,  0,  0,  0], Alias { sym: "",     policy:PrefixPolicy::None,  power: 1, factor: 1.0 }),
+        (Joules::dimension(), Alias { sym: "J",    policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
+        (Watts::dimension(), Alias { sym: "W",    policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
+        (Newtons::dimension(), Alias { sym: "N",    policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
+        (Pascals::dimension(), Alias { sym: "Pa",   policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
+        (Meters::dimension(), Alias { sym: "m",    policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
+        (Seconds::dimension(), Alias { sym: "s",    policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
+        (Kilograms::dimension(), Alias { sym: "g",   policy:PrefixPolicy::Any,   power: 1, factor: 1.0e3 }),
+        (Kelvin::dimension(), Alias { sym: "K",    policy:PrefixPolicy::Small, power: 1, factor: 1.0 }),
+        (Amps::dimension(), Alias { sym: "A",    policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
+        (Moles::dimension(), Alias { sym: "mol",  policy:PrefixPolicy::None,   power: 1, factor: 1.0 }),
+        (Velocity::dimension(), Alias { sym: "m/s",  policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
+        (Acceleration::dimension(), Alias { sym: "m/s^2",  policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
+        (Volts::dimension(), Alias { sym: "V", policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
+        (Area::dimension(), Alias { sym: "m^2", policy:PrefixPolicy::Any,   power: 2, factor: 1.0 }),
+        (Volume::dimension(), Alias { sym: "m^3", policy:PrefixPolicy::Any,   power: 3, factor: 1.0 }),
+        (Frequency::dimension(), Alias { sym: "Hz", policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
+        (Momentum::dimension(), Alias { sym: "Ns", policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
+        (Torque::dimension(), Alias { sym: "Nm", policy:PrefixPolicy::Any,   power: 1, factor: 1.0 }),
+        (Density::dimension(), Alias { sym: "g/m^3", policy:PrefixPolicy::Any,   power: 1, factor: 1.0e3 }),
+        (MolarMass::dimension(), Alias { sym: "g/mol", policy:PrefixPolicy::Any, power: 1, factor: 1.0e3 }),
+        (ThermalConductivity::dimension(), Alias { sym: "W/mK", policy:PrefixPolicy::Any, power: 1, factor: 1.0 }),
+        (Molality::dimension(), Alias { sym: "mol/kg", policy:PrefixPolicy::None, power: 1, factor: 1.0 }),
+        (Ohms::dimension(), Alias { sym: "Ω", policy:PrefixPolicy::Any, power: 1, factor: 1.0 }),
+        (Coulombs::dimension(), Alias { sym: "C", policy:PrefixPolicy::Any, power: 1, factor: 1.0 }),
+        (Siemens::dimension(), Alias { sym: "S", policy:PrefixPolicy::Any, power: 1, factor: 1.0 }),
+        (Farads::dimension(), Alias { sym: "F", policy:PrefixPolicy::Any, power: 1, factor: 1.0 }),
+
+        (MolarEnergy::dimension(), Alias { sym: "J/mol", policy:PrefixPolicy::Any, power: 1, factor: 1.0 } ),
+        (SpecificEnergy::dimension(), Alias { sym: "J/kg", policy:PrefixPolicy::Any, power: 1, factor: 1.0 } ),
+
+
+        (Concentration::dimension(), Alias { sym: "mol/dm^3", policy:PrefixPolicy::None, power: 1, factor: 1.0e-3 }),
+        (SpecificHeatCapacity::dimension(), Alias { sym: "J/kgK" policy:PrefixPolicy::Any, power: 1, factor: 1.0 }),
+
+        (Unitless::dimension(), Alias { sym: "",     policy:PrefixPolicy::None,  power: 1, factor: 1.0 }),
     ]);
 }
 
@@ -104,7 +123,7 @@ fn pick_prefix(x_si: f64, policy: PrefixPolicy, allow_prefix: bool, power: i8, s
                     continue;
                 }
                 let y = ax / p.factor.powi(power as i32);
-                if y >= 1.0 && y < 1000.0 {
+                if y >= 1.0 && y < 1000.0.powi(power as i32) {
                     best = (p.factor, p.sym);
                 }
             }
@@ -117,7 +136,7 @@ fn pick_prefix(x_si: f64, policy: PrefixPolicy, allow_prefix: bool, power: i8, s
                     continue;
                 }
                 let y = ax / p.factor.powi(power as i32);
-                if y >= 1.0 && y < 1000.0 {
+                if y >= 1.0 && y < 1000.0.powi(power as i32) {
                     best = (p.factor, p.sym);
                 }
             }
@@ -127,7 +146,7 @@ fn pick_prefix(x_si: f64, policy: PrefixPolicy, allow_prefix: bool, power: i8, s
             let mut best = (1.0, "");
             for p in PREFIXES {
                 let y = ax / p.factor.powi(power as i32);
-                if y >= 1.0 && y < 1000.0 {
+                if y >= 1.0 && y < 1000.0.powi(power as i32) {
                     best = (p.factor, p.sym);
                     break;
                 }
@@ -165,7 +184,6 @@ pub fn format_quantity<const D: i8, const T: i8, const M: i8, const K: i8, const
 ) -> String {
     let dim: Dimension = [D, T, M, K, I, N];
 
-    // 1) symbol & policy
     let (sym, policy, power, scale) = match style {
         Style::Canonical => (canonical_symbol(dim), PrefixPolicy::Any, 1, 1.0),
         Style::BestAlias => {
