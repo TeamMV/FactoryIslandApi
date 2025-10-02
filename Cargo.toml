@@ -10,6 +10,11 @@ lto = "fat"
 codegen-units = 1
 debug = false
 
+[[test]]
+name = "ServerWrapper"
+path = "tests/ServerWrapper/src/main.rs"
+harness = false
+
 [dependencies]
 mvlogger = "0.4.0"
 mvutils = "1.5.9"

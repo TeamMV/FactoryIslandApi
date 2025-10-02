@@ -53,7 +53,7 @@ pub mod multitile;
 pub mod packethandler;
 pub mod inventory;
 pub mod unit;
-mod utils;
+pub mod utils;
 pub mod meta;
 
 lazy! {

@@ -8,6 +8,7 @@ version = "0.1.0"
 dependencies = [
  "abi_stable",
  "bytebuffer",
+ "fi-proc-macro",
  "hashbrown",
  "libloading 0.8.6",
  "log",
@@ -773,6 +774,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e6853b52649d4ac5c0bd02320cddc5ba956bdb407c4b75a2c6b75bf51500f8c"
 dependencies = [
  "simd-adler32",
+]
+
+[[package]]
+name = "fi-proc-macro"
+version = "1.0.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
 ]
 
 [[package]]

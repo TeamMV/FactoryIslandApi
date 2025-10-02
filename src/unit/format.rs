@@ -90,9 +90,9 @@ lazy! {
 
 
         (Concentration::dimension(), Alias { sym: "mol/dm^3", policy:PrefixPolicy::None, power: 1, factor: 1.0e-3 }),
-        (SpecificHeatCapacity::dimension(), Alias { sym: "J/kgK" policy:PrefixPolicy::Any, power: 1, factor: 1.0 }),
+        (SpecificHeatCapacity::dimension(), Alias { sym: "J/kgK", policy:PrefixPolicy::Any, power: 1, factor: 1.0 }),
 
-        (Unitless::dimension(), Alias { sym: "",     policy:PrefixPolicy::None,  power: 1, factor: 1.0 }),
+        (Unitless::dimension(), Alias { sym: "", policy:PrefixPolicy::None,  power: 1, factor: 1.0 }),
     ]);
 }
 
@@ -123,7 +123,7 @@ fn pick_prefix(x_si: f64, policy: PrefixPolicy, allow_prefix: bool, power: i8, s
                     continue;
                 }
                 let y = ax / p.factor.powi(power as i32);
-                if y >= 1.0 && y < 1000.0.powi(power as i32) {
+                if y >= 1.0 && y < 1000f64.powi(power as i32) {
                     best = (p.factor, p.sym);
                 }
             }
@@ -136,7 +136,7 @@ fn pick_prefix(x_si: f64, policy: PrefixPolicy, allow_prefix: bool, power: i8, s
                     continue;
                 }
                 let y = ax / p.factor.powi(power as i32);
-                if y >= 1.0 && y < 1000.0.powi(power as i32) {
+                if y >= 1.0 && y < 1000f64.powi(power as i32) {
                     best = (p.factor, p.sym);
                 }
             }
@@ -146,7 +146,7 @@ fn pick_prefix(x_si: f64, policy: PrefixPolicy, allow_prefix: bool, power: i8, s
             let mut best = (1.0, "");
             for p in PREFIXES {
                 let y = ax / p.factor.powi(power as i32);
-                if y >= 1.0 && y < 1000.0.powi(power as i32) {
+                if y >= 1.0 && y < 1000f64.powi(power as i32) {
                     best = (p.factor, p.sym);
                     break;
                 }
@@ -175,6 +175,7 @@ fn fmt_number(x: f64, sig: u8, sci_hi: f64, sci_lo: f64) -> String {
     }
 }
 
+#[derive(PartialEq)]
 pub enum Style { BestAlias, Canonical }
 
 pub fn format_quantity<const D: i8, const T: i8, const M: i8, const K: i8, const I: i8, const N: i8>(

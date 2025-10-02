@@ -29,6 +29,7 @@ use abi_stable::pmr::IsAccessible::No;
 use bytebuffer::ByteBuffer;
 use hashbrown::HashSet;
 use log::{debug, error, info, warn};
+use mvengine::game::fs::cfgdir;
 use mvengine::game::fs::smartdir::SmartDir;
 use mvengine::net::server::ClientEndpoint;
 use mvutils::bytebuffer::ByteBufferExtras;
@@ -107,8 +108,7 @@ impl World {
 impl World {
     pub fn load(name: &str, game_objects: GameObjects) -> Option<WorldType> {
         let dir_name = name.replace(' ', "_");
-        let appdata = env::var("APPDATA").expect("Failed to get APPDATA environment variable");
-        let mut full = PathBuf::from(appdata);
+        let mut full = cfgdir::acquire_config_dir();
         full.push(manager::PATH);
         full.push(dir_name);
 
@@ -157,8 +157,7 @@ impl World {
 
     pub fn new(name: &str, seed: u32, game_objects: GameObjects) -> WorldType {
         let dir_name = name.replace(' ', "_");
-        let appdata = env::var("APPDATA").expect("Failed to get APPDATA environment variable");
-        let mut full = PathBuf::from(appdata);
+        let mut full = cfgdir::acquire_config_dir();
         full.push(manager::PATH);
         full.push(dir_name);
 

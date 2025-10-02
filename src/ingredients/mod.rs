@@ -1,5 +1,6 @@
 use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
+use std::str::FromStr;
 use log::{error, warn};
 use mvutils::Savable;
 use parsing::xml::{parse_rsx, Entity, XmlValue};
@@ -7,8 +8,6 @@ use crate::meta::Meta;
 use crate::meta::{MetaField, MetaValue};
 use crate::registry::ingredients::INGREDIENT_REGISTRY;
 use crate::registry::Registerable;
-use crate::unit::parsing::parse_number_and_unit;
-use crate::unit::Unit;
 use crate::utils::AssertOnFalse;
 
 #[derive(Clone)]
@@ -41,11 +40,10 @@ impl IngredientCreator {
         }
     }
 
-    pub fn with_static_num(mut self, key: &str, num: f32, unit: Unit) -> Self {
+    pub fn with_static_num(mut self, key: &str, num: f32) -> Self {
         self.static_m.set(key, MetaField {
             key: key.to_string(),
             value: MetaValue::Float(num),
-            unit,
         });
         self
     }
@@ -54,16 +52,14 @@ impl IngredientCreator {
         self.static_m.set(key, MetaField {
             key: key.to_string(),
             value: MetaValue::Str(value.to_string()),
-            unit: Unit::None,
         });
         self
     }
 
-    pub fn with_dynamic_num(mut self, key: &str, num: f32, unit: Unit) -> Self {
+    pub fn with_dynamic_num(mut self, key: &str, num: f32) -> Self {
         self.dynamic_m.set(key, MetaField {
             key: key.to_string(),
             value: MetaValue::Float(num),
-            unit,
         });
         self
     }
@@ -72,7 +68,6 @@ impl IngredientCreator {
         self.dynamic_m.set(key, MetaField {
             key: key.to_string(),
             value: MetaValue::Str(value.to_string()),
-            unit: Unit::None,
         });
         self
     }
@@ -105,17 +100,16 @@ impl IngredientCreator {
                 let name = Self::get_attrib(inner, "name");
                 let val = Self::get_attrib(inner, "val");
 
-                let result = parse_number_and_unit(&val);
+                let result = f32::from_str(&val);
 
-                let (value, unit) = match result {
-                    Ok((value, unit)) => (MetaValue::Float(value), unit),
-                    Err(s) => (MetaValue::Str(s), Unit::None),
+                let value = match result {
+                    Ok(value) => MetaValue::Float(value),
+                    Err(s) => MetaValue::Str(s.to_string()),
                 };
 
                 let parsed: MetaField = MetaField {
                     key: name.clone(),
                     value,
-                    unit,
                 };
                 meta.set(&name, parsed);
             }

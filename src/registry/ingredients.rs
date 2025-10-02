@@ -1,6 +1,5 @@
 use mvutils::lazy;
 use crate::ingredients::{Ingredient, IngredientCreator};
-use crate::unit::{Unit, UnitPrefix, KELVIN_CELSIUS_OFFSET};
 use crate::registry::Registry;
 
 lazy! {

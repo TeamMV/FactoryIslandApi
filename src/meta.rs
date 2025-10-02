@@ -1,6 +1,5 @@
 use std::fmt::Display;
 use crate::inventory::InventoryData;
-use crate::unit::Unit;
 use hashbrown::HashMap;
 use mvutils::Savable;
 use mvutils::utils::TetrahedronOp;
@@ -38,7 +37,6 @@ impl Meta {
 pub struct MetaField {
     pub key: String,
     pub value: MetaValue,
-    pub unit: Unit,
 }
 
 impl Display for MetaField {
@@ -47,12 +45,10 @@ impl Display for MetaField {
             MetaValue::Str(s) => s.clone(),
             MetaValue::Bool(b) => b.yn("True", "False").to_string(),
             MetaValue::Integer(i) => {
-                let base = self.unit.to_base(*i as f64);
-                self.unit.format_value(base)
+                i.to_string()
             }
             MetaValue::Float(f) => {
-                let base = self.unit.to_base(*f as f64);
-                self.unit.format_value(base)
+                f.to_string()
             }
             MetaValue::Inventory(_) => "Inner data".to_string(),
         };
