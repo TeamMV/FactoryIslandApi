@@ -4,7 +4,7 @@ use crate::FactoryIsland;
 pub struct ChunksCommand;
 
 impl CommandExecutor for ChunksCommand {
-    fn on_command(&mut self, sender: CommandSender, _: String, args: Vec<String>, fi: &mut FactoryIsland) {
+    fn on_command(&mut self, sender: &mut CommandSender, buffer: &[String], _: String, args: Vec<String>, fi: &mut FactoryIsland) {
         if let CommandSender::Player(_) = &sender {
             sender.send_error_message("This command can only be ran through console".to_string());
             return;

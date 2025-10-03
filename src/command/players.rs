@@ -4,7 +4,7 @@ use crate::{FactoryIsland, PLAYERS};
 pub struct PlayersCommand;
 
 impl CommandExecutor for PlayersCommand {
-    fn on_command(&mut self, sender: CommandSender, _: String, _args: Vec<String>, fi: &mut FactoryIsland) {
+    fn on_command(&mut self, sender: &mut CommandSender, buffer: &[String], _: String, _args: Vec<String>, fi: &mut FactoryIsland) {
         let players = PLAYERS.read();
         sender.send_message("Currently on the server:".to_string());
         if players.is_empty() {

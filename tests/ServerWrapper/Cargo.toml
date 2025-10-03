@@ -11,4 +11,4 @@ codegen-units = 1
 debug = false
 
 [dependencies]
-api = { path = "../../../Api", package = "Api" }
+Api = { path = "../../../Api" }

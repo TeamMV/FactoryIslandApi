@@ -97,7 +97,8 @@ impl FactoryIsland {
     }
 
     pub fn on_command(&mut self, command: String, player: Option<PlayerData>) {
-        COMMAND_PROCESSOR.process(player.map_or(CommandSender::Console, |d| CommandSender::Player(d)), command, self);
+        let mut sender = player.map_or(CommandSender::Console, |d| CommandSender::Player(d));
+        COMMAND_PROCESSOR.process(&mut sender, command, self);
     }
 
     pub fn stop(&mut self) {
